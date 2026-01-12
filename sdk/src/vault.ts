@@ -29,7 +29,7 @@ export class PrivacyVaultSDK {
   private provider: ethers.Provider;
   private signer: ethers.Signer | null = null;
   private vault: ethers.Contract;
-  private zkVerifier: ethers.Contract;
+  private _zkVerifier: ethers.Contract;
   private aspRegistry: ethers.Contract;
   private phatClient: PhatClient;
   private config: VaultConfig;
@@ -49,7 +49,7 @@ export class PrivacyVaultSDK {
       this.signer ?? this.provider
     );
 
-    this.zkVerifier = new ethers.Contract(
+    this._zkVerifier = new ethers.Contract(
       config.zkVerifierAddress,
       ZK_VERIFIER_ABI,
       this.provider
@@ -147,7 +147,7 @@ export class PrivacyVaultSDK {
     const teeResult = await this.phatClient.processWithdrawal({
       commitment: note.commitment,
       nullifier: nullifierBytes,
-      recipient: hexToBytes(recipient.slice(2)),
+      recipient: recipient,
       amount: note.amount,
       merklePath: merkleProof.path,
       pathIndices: merkleProof.indices,
@@ -216,7 +216,7 @@ export class PrivacyVaultSDK {
     const teeResult = await this.phatClient.processWithdrawal({
       commitment: note.commitment,
       nullifier: nullifierBytes,
-      recipient: hexToBytes(recipient.slice(2)),
+      recipient: recipient,
       amount: note.amount,
       merklePath: merkleProof.path,
       pathIndices: merkleProof.indices,

@@ -22,10 +22,6 @@ thiserror = "1.0"
 criterion = "0.5"
 proptest = "1.4"
 
-[[bench]]
-name = "withdrawal_bench"
-harness = false
-
 [features]
 default = []
 parallel = ["halo2_proofs/parallel"]

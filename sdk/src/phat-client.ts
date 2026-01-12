@@ -212,7 +212,7 @@ export class PhatClient {
     return {
       commitment: bytesToHex(request.commitment),
       nullifier: bytesToHex(request.nullifier),
-      recipient: bytesToHex(request.recipient),
+      recipient: request.recipient,
       amount: request.amount.toString(),
       merkle_proof: request.merklePath.map((p) => bytesToHex(p)),
       proof_indices: request.pathIndices,
