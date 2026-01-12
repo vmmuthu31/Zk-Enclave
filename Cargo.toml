@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "zk-circuits",
+    "compliance"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+sha2 = "0.10"
+hex = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"

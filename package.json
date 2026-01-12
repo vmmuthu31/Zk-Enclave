@@ -1,0 +1,25 @@
+{
+  "name": "zkenclave",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "sdk"
+  ],
+  "scripts": {
+    "build": "npm run build:contracts && npm run build:sdk",
+    "build:contracts": "cd contracts && forge build",
+    "build:sdk": "cd sdk && npm run build",
+    "test": "npm run test:contracts && npm run test:sdk && npm run test:rust",
+    "test:contracts": "cd contracts && forge test",
+    "test:sdk": "cd sdk && npm test",
+    "test:rust": "cargo test --manifest-path zk-circuits/Cargo.toml && cargo test --manifest-path compliance/Cargo.toml",
+    "lint": "npm run lint:sdk",
+    "lint:sdk": "cd sdk && npm run lint",
+    "clean": "rm -rf contracts/out sdk/dist",
+    "deploy:local": "cd contracts && forge script scripts/Deploy.s.sol --broadcast"
+  },
+  "devDependencies": {
+    "prettier": "^3.2.0",
+    "prettier-plugin-solidity": "^1.3.0"
+  }
+}
