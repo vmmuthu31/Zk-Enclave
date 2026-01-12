@@ -22,18 +22,11 @@ impl MerkleTree {
         zero_values.push(current);
         
         for _ in 0..depth {
-            current = Self::hash_pair(&current, &current);
+            current = merkle_hash(&current, &current);
             zero_values.push(current);
         }
         
         Self { depth, zero_values }
-    }
-
-    pub fn hash_pair(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update(left);
-        hasher.update(right);
-        hasher.finalize().into()
     }
 
     pub fn compute_root_from_path(
@@ -46,9 +39,9 @@ impl MerkleTree {
         
         for (sibling, &is_right) in path.iter().zip(indices.iter()) {
             if is_right {
-                current = Self::hash_pair(sibling, &current);
+                current = merkle_hash(sibling, &current);
             } else {
-                current = Self::hash_pair(&current, sibling);
+                current = merkle_hash(&current, sibling);
             }
         }
         
@@ -57,7 +50,7 @@ impl MerkleTree {
 
     pub fn generate_proof_for_leaf(
         &self,
-        leaf: &[u8; 32],
+        _leaf: &[u8; 32],
         index: usize,
     ) -> (Vec<[u8; 32]>, Vec<bool>) {
         let mut path = Vec::with_capacity(self.depth);
@@ -82,6 +75,13 @@ impl MerkleTree {
         let computed_root = self.compute_root_from_path(leaf, &proof.path, &proof.indices);
         computed_root == proof.root
     }
+}
+
+pub fn merkle_hash(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(left);
+    hasher.update(right);
+    hasher.finalize().into()
 }
 
 #[cfg(test)]

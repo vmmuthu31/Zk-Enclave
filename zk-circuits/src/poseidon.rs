@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use ff::Field;
+use ff::PrimeField;
 use halo2_proofs::{
     circuit::{AssignedCell, Chip, Layouter, Region, Value},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
@@ -30,12 +30,12 @@ pub struct PoseidonConfig {
     pub selector_partial: Selector,
 }
 
-pub struct PoseidonChip<F: Field> {
+pub struct PoseidonChip<F: PrimeField> {
     config: PoseidonConfig,
     _marker: PhantomData<F>,
 }
 
-impl<F: Field> Chip<F> for PoseidonChip<F> {
+impl<F: PrimeField> Chip<F> for PoseidonChip<F> {
     type Config = PoseidonConfig;
     type Loaded = ();
 
@@ -48,7 +48,7 @@ impl<F: Field> Chip<F> for PoseidonChip<F> {
     }
 }
 
-impl<F: Field> PoseidonChip<F> {
+impl<F: PrimeField> PoseidonChip<F> {
     pub fn construct(config: PoseidonConfig) -> Self {
         Self {
             config,
@@ -253,7 +253,7 @@ impl<F: Field> PoseidonChip<F> {
     }
 }
 
-pub fn poseidon_hash_native<F: Field>(inputs: &[F]) -> F {
+pub fn poseidon_hash_native<F: PrimeField>(inputs: &[F]) -> F {
     let mut state = [F::ZERO; POSEIDON_WIDTH];
     
     for (i, input) in inputs.iter().enumerate() {
@@ -299,6 +299,7 @@ pub fn poseidon_hash_native<F: Field>(inputs: &[F]) -> F {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ff::Field;
     use halo2_proofs::halo2curves::bn256::Fr;
 
     #[test]

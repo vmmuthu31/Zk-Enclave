@@ -14,7 +14,7 @@ use halo2_proofs::{
         multiopen::{ProverSHPLONK, VerifierSHPLONK},
         strategy::SingleStrategy,
     },
-    transcript::{Blake2bRead, Blake2bWrite, Challenge255},
+    transcript::{Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer},
 };
 use rand::rngs::OsRng;
 use thiserror::Error;
