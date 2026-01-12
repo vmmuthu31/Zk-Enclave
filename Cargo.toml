@@ -2,7 +2,8 @@
 resolver = "2"
 members = [
     "zk-circuits",
-    "compliance"
+    "compliance",
+    "phat-contract"
 ]
 
 [workspace.package]
