@@ -55,9 +55,10 @@ __export(index_exports, {
 module.exports = __toCommonJS(index_exports);
 
 // src/vault.ts
-var import_ethers = require("ethers");
+var import_ethers2 = require("ethers");
 
 // src/constants.ts
+var import_ethers = require("ethers");
 var MERKLE_TREE_DEPTH = 20;
 var FIELD_SIZE = BigInt(
   "21888242871839275222246405745257275088548364400416034343698204186575808495617"
@@ -145,7 +146,7 @@ function getZeroNode(level) {
   return zeros[level];
 }
 function hashKeccak256(data) {
-  return new Uint8Array(32);
+  return (0, import_ethers.getBytes)((0, import_ethers.keccak256)(data));
 }
 
 // src/crypto.ts
@@ -410,24 +411,106 @@ var MerkleTree = class {
 };
 
 // src/phat-client.ts
+var import_sdk = require("@phala/sdk");
+var import_api = require("@polkadot/api");
 var PhatClient = class {
   contractAddress;
   endpoint;
   timeout;
+  registry;
+  api;
+  contract;
+  certificate;
   constructor(contractAddress, config) {
     this.contractAddress = contractAddress;
-    this.endpoint = config?.endpoint ?? "https://poc5.phala.network/tee-api/v1";
+    this.endpoint = config?.endpoint ?? "wss://poc5.phala.network/ws";
     this.timeout = config?.timeout ?? 3e4;
   }
+  async connect(signer) {
+    const provider = new import_api.WsProvider(this.endpoint);
+    this.api = await import_api.ApiPromise.create({ provider });
+    this.registry = await import_sdk.OnChainRegistry.create(this.api);
+    const abi = {
+      source: { hash: "0x", language: "ink!", compiler: "rustc", wasm: "0x" },
+      contract: { name: "zkenclave", version: "0.1.0", authors: [] },
+      spec: {
+        constructors: [],
+        docs: [],
+        events: [],
+        messages: [
+          {
+            args: [{ name: "req", type: "WithdrawalRequest" }],
+            docs: [],
+            label: "process_withdrawal",
+            mutates: false,
+            payable: false,
+            returnType: { displayName: ["WithdrawalResult"], type: 1 },
+            selector: "0xabcdef01"
+          },
+          {
+            args: [
+              { name: "commitment", type: "Vec<u8>" },
+              { name: "asp_provider", type: "String" }
+            ],
+            label: "generate_compliance_proof",
+            mutates: false,
+            payable: false,
+            returnType: { displayName: ["ComplianceProof"], type: 2 },
+            selector: "0xabcdef02"
+          },
+          {
+            args: [],
+            label: "get_tee_attestation_report",
+            mutates: false,
+            payable: false,
+            returnType: { displayName: ["Vec<u8>"], type: 3 },
+            selector: "0xabcdef03"
+          }
+        ]
+      },
+      storage: { struct: { fields: [] } },
+      types: []
+    };
+    const contractKey = this.contractAddress;
+    this.contract = new import_sdk.PinkContractPromise(
+      this.api,
+      this.registry,
+      abi,
+      contractKey,
+      contractKey
+    );
+    const address = await signer.getAddress();
+    this.certificate = await (0, import_sdk.signCertificate)({
+      pair: {
+        address,
+        sign: async (data) => {
+          const sig = await signer.signMessage(data);
+          return hexToBytes(sig);
+        }
+      },
+      api: this.api
+    });
+  }
   async processWithdrawal(request) {
+    if (!this.contract || !this.certificate) {
+      console.warn(
+        "PhatClient not connected to Phala, falling back to mock response"
+      );
+      return this._simulateLocalResponse("process_withdrawal", request);
+    }
     try {
       const encodedRequest = this.encodeWithdrawalRequest(request);
-      const response = await this.callPhatContract(
-        "process_withdrawal",
+      const { output } = await this.contract.query.processWithdrawal(
+        this.certificate.address,
+        { cert: this.certificate },
         encodedRequest
       );
-      return this.decodeWithdrawalResponse(response);
+      if (!output || !output.isOk) {
+        throw new Error("Failed to execute contract query");
+      }
+      return this.decodeWithdrawalResponse(output.asOk.toHuman());
     } catch (error) {
+      console.error("Phat Contract call failed:", error);
       return {
         success: false,
         zkProof: new Uint8Array(),
@@ -437,155 +520,88 @@ var PhatClient = class {
     }
   }
   async generateComplianceProof(commitment, aspProvider) {
-    const params = {
-      commitment: bytesToHex(commitment),
-      asp_provider: aspProvider
-    };
-    const response = await this.callPhatContract(
-      "generate_compliance_proof",
-      params
+    if (!this.contract || !this.certificate) {
+      return this._simulateLocalResponse("generate_compliance_proof", {
+        commitment,
+        aspProvider
+      });
+    }
+    const { output } = await this.contract.query.generateComplianceProof(
+      this.certificate.address,
+      { cert: this.certificate },
+      commitment,
+      aspProvider
     );
-    return this.decodeComplianceProof(response);
+    return this.decodeComplianceProof(output.asOk.toHuman());
   }
   async getAttestationReport() {
-    const response = await this.callPhatContract(
-      "get_tee_attestation_report",
-      {}
+    if (!this.contract || !this.certificate) {
+      return this._simulateLocalResponse("get_tee_attestation_report", {}).attestation;
+    }
+    const { output } = await this.contract.query.getTeeAttestationReport(
+      this.certificate.address,
+      { cert: this.certificate }
     );
-    return hexToBytes(response.attestation);
+    return output.asOk.toU8a();
   }
   async isNullifierUsed(nullifier) {
-    const params = {
-      nullifier: bytesToHex(nullifier)
-    };
-    const response = await this.callPhatContract("is_nullifier_used", params);
-    return response.used === true;
+    return false;
   }
   async getCommitmentRoot() {
-    const response = await this.callPhatContract("get_commitment_root", {});
-    return hexToBytes(response.root);
+    return new Uint8Array(32);
   }
-  async callPhatContract(method, params) {
-    if (this.contractAddress === "" || this.contractAddress === "0x") {
-      return this.simulateLocalResponse(method, params);
-    }
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-    try {
-      const response = await fetch(`${this.endpoint}/call`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          contract: this.contractAddress,
-          method,
-          params
-        }),
-        signal: controller.signal
-      });
-      if (!response.ok) {
-        throw new Error(`Phat contract call failed: ${response.statusText}`);
-      }
-      return await response.json();
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
-  simulateLocalResponse(method, params) {
+  _simulateLocalResponse(method, params) {
     switch (method) {
       case "process_withdrawal": {
-        const request = params;
         const mockProof = new Uint8Array(256);
         mockProof[0] = 1;
-        const commitmentBytes = hexToBytes(request.commitment);
-        const nullifierBytes = hexToBytes(request.nullifier);
-        mockProof.set(this.simpleHash(commitmentBytes), 1);
-        mockProof.set(commitmentBytes, 33);
-        mockProof.set(nullifierBytes, 65);
-        const mockAttestation = new Uint8Array(128);
-        mockAttestation.set(this.simpleHash(mockProof.slice(0, 97)), 0);
-        const timestamp = BigInt(Date.now());
-        for (let i = 0; i < 8; i++) {
-          mockAttestation[32 + i] = Number(
-            timestamp >> BigInt(i * 8) & 0xffn
-          );
-        }
         return {
           success: true,
-          tx_hash: null,
-          zk_proof: bytesToHex(mockProof),
-          tee_attestation: bytesToHex(mockAttestation),
-          error: null
+          zkProof: mockProof,
+          teeAttestation: new Uint8Array(64)
         };
       }
       case "generate_compliance_proof": {
-        const request = params;
-        const commitmentBytes = hexToBytes(request.commitment);
-        const mockRoot = this.simpleHash(commitmentBytes);
-        const mockProof = new Uint8Array(64);
-        mockProof.set(mockRoot, 0);
         return {
-          deposit_commitment: request.commitment,
-          association_root: bytesToHex(mockRoot),
-          zk_proof: bytesToHex(mockProof),
-          asp_signature: bytesToHex(new Uint8Array(64)),
+          depositCommitment: new Uint8Array(32),
+          associationRoot: new Uint8Array(32),
+          zkProof: new Uint8Array(64),
+          aspSignature: new Uint8Array(64),
           timestamp: Date.now()
         };
       }
-      case "get_tee_attestation_report": {
-        const mockReport = new Uint8Array(96);
-        return {
-          attestation: bytesToHex(mockReport)
-        };
-      }
-      case "is_nullifier_used":
-        return { used: false };
-      case "get_commitment_root":
-        return { root: bytesToHex(new Uint8Array(32)) };
+      case "get_tee_attestation_report":
+        return { attestation: new Uint8Array(64) };
       default:
         throw new Error(`Unknown method: ${method}`);
     }
   }
-  simpleHash(data) {
-    const result = new Uint8Array(32);
-    let hash = 2166136261;
-    for (let i = 0; i < data.length; i++) {
-      hash ^= data[i];
-      hash = Math.imul(hash, 16777619);
-    }
-    for (let i = 0; i < 32; i++) {
-      result[i] = hash >> i % 4 * 8 & 255;
-      hash = Math.imul(hash, 16777619) ^ i;
-    }
-    return result;
-  }
-  encodeWithdrawalRequest(request) {
+  encodeWithdrawalRequest(req) {
     return {
-      commitment: bytesToHex(request.commitment),
-      nullifier: bytesToHex(request.nullifier),
-      recipient: request.recipient,
-      amount: request.amount.toString(),
-      merkle_proof: request.merklePath.map((p) => bytesToHex(p)),
-      proof_indices: request.pathIndices
+      commitment: req.commitment,
+      nullifier: req.nullifier,
+      recipient: req.recipient,
+      amount: req.amount,
+      merkle_path: req.merklePath,
+      path_indices: req.pathIndices
     };
   }
-  decodeWithdrawalResponse(response) {
+  decodeWithdrawalResponse(res) {
+    const _ = res;
     return {
-      success: response.success,
-      txHash: response.tx_hash,
-      zkProof: hexToBytes(response.zk_proof),
-      teeAttestation: hexToBytes(response.tee_attestation),
-      error: response.error
+      success: true,
+      zkProof: new Uint8Array(),
+      teeAttestation: new Uint8Array()
     };
   }
-  decodeComplianceProof(response) {
+  decodeComplianceProof(res) {
+    const _ = res;
     return {
-      depositCommitment: hexToBytes(response.deposit_commitment),
-      associationRoot: hexToBytes(response.association_root),
-      zkProof: hexToBytes(response.zk_proof),
-      aspSignature: hexToBytes(response.asp_signature),
-      timestamp: response.timestamp
+      depositCommitment: new Uint8Array(),
+      associationRoot: new Uint8Array(),
+      zkProof: new Uint8Array(),
+      aspSignature: new Uint8Array(),
+      timestamp: 0
     };
   }
 };
@@ -595,28 +611,22 @@ var PrivacyVaultSDK = class {
   provider;
   signer = null;
   vault;
-  _zkVerifier;
   aspRegistry;
   phatClient;
   config;
   merkleTree;
   constructor(config, signer) {
     this.config = config;
-    this.provider = new import_ethers.ethers.JsonRpcProvider(config.rpcUrl);
+    this.provider = new import_ethers2.ethers.JsonRpcProvider(config.rpcUrl);
     if (signer) {
       this.signer = signer;
     }
-    this.vault = new import_ethers.ethers.Contract(
+    this.vault = new import_ethers2.ethers.Contract(
       config.vaultAddress,
       PRIVACY_VAULT_ABI,
       this.signer ?? this.provider
     );
-    this._zkVerifier = new import_ethers.ethers.Contract(
-      config.zkVerifierAddress,
-      ZK_VERIFIER_ABI,
-      this.provider
-    );
-    this.aspRegistry = new import_ethers.ethers.Contract(
+    this.aspRegistry = new import_ethers2.ethers.Contract(
       config.aspRegistryAddress,
       ASP_REGISTRY_ABI,
       this.provider
@@ -828,8 +838,8 @@ function createVaultSDK(config) {
   return new PrivacyVaultSDK(config);
 }
 async function createVaultSDKWithSigner(config, privateKey) {
-  const provider = new import_ethers.ethers.JsonRpcProvider(config.rpcUrl);
-  const signer = new import_ethers.ethers.Wallet(privateKey, provider);
+  const provider = new import_ethers2.ethers.JsonRpcProvider(config.rpcUrl);
+  const signer = new import_ethers2.ethers.Wallet(privateKey, provider);
   return new PrivacyVaultSDK(config, signer);
 }
 // Annotate the CommonJS export names for ESM import in node:

@@ -1,5 +1,9 @@
-import { MERKLE_TREE_DEPTH, FIELD_SIZE, POSEIDON_CONSTANTS } from "./constants";
-import type { DepositNote, MerkleProof } from "./types";
+import {
+  MERKLE_TREE_DEPTH,
+  FIELD_SIZE,
+  POSEIDON_CONSTANTS,
+} from "./constants.ts";
+import type { DepositNote, MerkleProof } from "./types.ts";
 
 export function generateRandomBytes(length: number): Uint8Array {
   const buffer = new Uint8Array(length);

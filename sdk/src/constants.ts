@@ -1,4 +1,7 @@
+import { keccak256, getBytes } from "ethers";
+
 export const MERKLE_TREE_DEPTH = 20;
+
 export const FIELD_SIZE = BigInt(
   "21888242871839275222246405745257275088548364400416034343698204186575808495617"
 );
@@ -14,10 +17,10 @@ export const CONTRACT_ADDRESSES = {
       zkVerifier: "0x0000000000000000000000000000000000000000",
       aspRegistry: "0x0000000000000000000000000000000000000000",
     },
-    sepolia: {
-      vault: "0x0000000000000000000000000000000000000000",
-      zkVerifier: "0x0000000000000000000000000000000000000000",
-      aspRegistry: "0x0000000000000000000000000000000000000000",
+    celoSepolia: {
+      vault: "0x68F19280d3030eaE36B8Da42621B66e92a8AEA32",
+      zkVerifier: "0x68491614a84C0410E9Fc0CB59Fc60A4F9188687c",
+      aspRegistry: "0xB041Cff58FB866c7f4326e0767c97B93434aBa9E",
     },
   },
   phala: {
@@ -36,10 +39,10 @@ export const CHAIN_CONFIG = {
     rpcUrl: "https://eth.llamarpc.com",
     explorer: "https://etherscan.io",
   },
-  11155111: {
-    name: "Sepolia Testnet",
-    rpcUrl: "https://rpc.sepolia.org",
-    explorer: "https://sepolia.etherscan.io",
+  11142220: {
+    name: "Celo Sepolia",
+    rpcUrl: "https://forno.celo-sepolia.celo-testnet.org",
+    explorer: "https://sepolia.celoscan.io",
   },
   2035: {
     name: "Phala L2",
@@ -97,5 +100,5 @@ export function getZeroNode(level: number): Uint8Array {
 }
 
 function hashKeccak256(data: Uint8Array): Uint8Array {
-  return new Uint8Array(32);
+  return getBytes(keccak256(data));
 }

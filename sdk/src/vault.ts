@@ -1,10 +1,9 @@
 import { ethers } from "ethers";
 import {
   PRIVACY_VAULT_ABI,
-  ZK_VERIFIER_ABI,
   ASP_REGISTRY_ABI,
   DEFAULT_GAS_LIMIT,
-} from "./constants";
+} from "./constants.ts";
 import {
   generateDepositNote,
   computeNullifier,
@@ -13,7 +12,7 @@ import {
   hexToBytes,
   bigIntToBytes32,
   MerkleTree,
-} from "./crypto";
+} from "./crypto.ts";
 import type {
   DepositNote,
   DepositResult,
@@ -22,14 +21,14 @@ import type {
   VaultStats,
   ComplianceProof,
   MerkleProof,
-} from "./types";
-import { PhatClient } from "./phat-client";
+} from "./types.ts";
+import { PhatClient } from "./phat-client.ts";
 
 export class PrivacyVaultSDK {
   private provider: ethers.Provider;
   private signer: ethers.Signer | null = null;
   private vault: ethers.Contract;
-  private _zkVerifier: ethers.Contract;
+
   private aspRegistry: ethers.Contract;
   private phatClient: PhatClient;
   private config: VaultConfig;
@@ -47,12 +46,6 @@ export class PrivacyVaultSDK {
       config.vaultAddress,
       PRIVACY_VAULT_ABI,
       this.signer ?? this.provider
-    );
-
-    this._zkVerifier = new ethers.Contract(
-      config.zkVerifierAddress,
-      ZK_VERIFIER_ABI,
-      this.provider
     );
 
     this.aspRegistry = new ethers.Contract(
