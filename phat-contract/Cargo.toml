@@ -1,0 +1,37 @@
+[package]
+name = "privacy-vault-tee"
+version = "0.1.0"
+edition = "2021"
+authors = ["zkenclave-team"]
+description = "Phala Phat Contract for privacy-preserving vault withdrawals"
+
+[dependencies]
+ink = { version = "5.0", default-features = false }
+pink-extension = "0.6"
+scale = { package = "parity-scale-codec", version = "3.6", default-features = false, features = ["derive"] }
+scale-info = { version = "2.11", default-features = false, features = ["derive"] }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+sha2 = { version = "0.10", default-features = false }
+aes-gcm = { version = "0.10", default-features = false, features = ["alloc", "aes"] }
+rand = { version = "0.8", default-features = false }
+getrandom = { version = "0.2", default-features = false, features = ["js"] }
+
+[dev-dependencies]
+ink_e2e = "5.0"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = [
+    "ink/std",
+    "pink-extension/std",
+    "scale/std",
+    "scale-info/std",
+    "serde/std",
+    "serde_json/std",
+]
+e2e-tests = []
