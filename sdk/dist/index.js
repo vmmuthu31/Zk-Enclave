@@ -564,7 +564,7 @@ var PhatClient = class {
     return {
       commitment: bytesToHex(request.commitment),
       nullifier: bytesToHex(request.nullifier),
-      recipient: bytesToHex(request.recipient),
+      recipient: request.recipient,
       amount: request.amount.toString(),
       merkle_proof: request.merklePath.map((p) => bytesToHex(p)),
       proof_indices: request.pathIndices
@@ -595,7 +595,7 @@ var PrivacyVaultSDK = class {
   provider;
   signer = null;
   vault;
-  zkVerifier;
+  _zkVerifier;
   aspRegistry;
   phatClient;
   config;
@@ -611,7 +611,7 @@ var PrivacyVaultSDK = class {
       PRIVACY_VAULT_ABI,
       this.signer ?? this.provider
     );
-    this.zkVerifier = new import_ethers.ethers.Contract(
+    this._zkVerifier = new import_ethers.ethers.Contract(
       config.zkVerifierAddress,
       ZK_VERIFIER_ABI,
       this.provider
@@ -689,7 +689,7 @@ var PrivacyVaultSDK = class {
     const teeResult = await this.phatClient.processWithdrawal({
       commitment: note.commitment,
       nullifier: nullifierBytes,
-      recipient: hexToBytes(recipient.slice(2)),
+      recipient,
       amount: note.amount,
       merklePath: merkleProof.path,
       pathIndices: merkleProof.indices
@@ -744,7 +744,7 @@ var PrivacyVaultSDK = class {
     const teeResult = await this.phatClient.processWithdrawal({
       commitment: note.commitment,
       nullifier: nullifierBytes,
-      recipient: hexToBytes(recipient.slice(2)),
+      recipient,
       amount: note.amount,
       merklePath: merkleProof.path,
       pathIndices: merkleProof.indices
