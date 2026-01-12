@@ -19,7 +19,7 @@ contract ZKVerifier {
         uint256[2] c;
     }
 
-    VerifyingKey public vk;
+    VerifyingKey internal vk;
     bool public initialized;
     address public owner;
 

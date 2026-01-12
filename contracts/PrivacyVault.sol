@@ -127,7 +127,7 @@ contract PrivacyVault {
         bytes32[] memory publicInputs = new bytes32[](4);
         publicInputs[0] = root;
         publicInputs[1] = nullifierHash;
-        publicInputs[2] = bytes32(uint256(uint160(recipient)));
+        publicInputs[2] = bytes32(uint256(uint160(address(recipient))));
         publicInputs[3] = bytes32(amount);
 
         if (!zkVerifier.verifyProof(zkProof, publicInputs)) {
@@ -172,7 +172,7 @@ contract PrivacyVault {
         bytes32[] memory publicInputs = new bytes32[](4);
         publicInputs[0] = root;
         publicInputs[1] = nullifierHash;
-        publicInputs[2] = bytes32(uint256(uint160(recipient)));
+        publicInputs[2] = bytes32(uint256(uint160(address(recipient))));
         publicInputs[3] = bytes32(amount);
 
         if (!zkVerifier.verifyProof(zkProof, publicInputs)) {

@@ -12,19 +12,10 @@ pub const POSEIDON_RATE: usize = 2;
 pub const POSEIDON_ROUNDS_F: usize = 8;
 pub const POSEIDON_ROUNDS_P: usize = 57;
 
-pub const ROUND_CONSTANTS: [[u64; POSEIDON_WIDTH]; POSEIDON_ROUNDS_F + POSEIDON_ROUNDS_P] = {
-    let mut constants = [[0u64; POSEIDON_WIDTH]; POSEIDON_ROUNDS_F + POSEIDON_ROUNDS_P];
-    let mut i = 0;
-    while i < POSEIDON_ROUNDS_F + POSEIDON_ROUNDS_P {
-        constants[i] = [
-            (i * 3 + 1) as u64 * 0x1234567890abcdef,
-            (i * 3 + 2) as u64 * 0xfedcba0987654321,
-            (i * 3 + 3) as u64 * 0x0f1e2d3c4b5a6978,
-        ];
-        i += 1;
-    }
-    constants
-};
+pub fn get_round_constant(round: usize, index: usize) -> u64 {
+    let seed = (round * POSEIDON_WIDTH + index + 1) as u64;
+    seed.wrapping_mul(0x517cc1b727220a95).wrapping_add(0x96696969)
+}
 
 pub const MDS_MATRIX: [[u64; POSEIDON_WIDTH]; POSEIDON_WIDTH] = [
     [2, 1, 1],
@@ -198,7 +189,7 @@ impl<F: Field> PoseidonChip<F> {
                     || format!("rc_{}_{}", round, i),
                     *col,
                     round,
-                    || Value::known(F::from(ROUND_CONSTANTS[round][i])),
+                    || Value::known(F::from(get_round_constant(round, i))),
                 )?;
             }
 
@@ -225,9 +216,8 @@ impl<F: Field> PoseidonChip<F> {
     }
 
     fn permute_round(&self, state: &[Value<F>], round: usize, is_full: bool) -> Vec<Value<F>> {
-        let rc: Vec<F> = ROUND_CONSTANTS[round]
-            .iter()
-            .map(|&x| F::from(x))
+        let rc: Vec<F> = (0..POSEIDON_WIDTH)
+            .map(|i| F::from(get_round_constant(round, i)))
             .collect();
 
         let sboxed: Vec<Value<F>> = if is_full {
@@ -278,7 +268,7 @@ pub fn poseidon_hash_native(inputs: &[Fp]) -> Fp {
         let is_full = round < half_full || round >= half_full + POSEIDON_ROUNDS_P;
         
         for i in 0..POSEIDON_WIDTH {
-            state[i] += Fp::from(ROUND_CONSTANTS[round][i]);
+            state[i] += Fp::from(get_round_constant(round, i));
         }
 
         if is_full {

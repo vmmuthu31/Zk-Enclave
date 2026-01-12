@@ -15,11 +15,10 @@ use halo2_proofs::{
         multiopen::{ProverSHPLONK, VerifierSHPLONK},
         strategy::SingleStrategy,
     },
-    transcript::{Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer},
+    transcript::{Blake2bRead, Blake2bWrite, Challenge255},
 };
 use halo2curves::bn256::{Bn256, Fr, G1Affine};
 use rand::rngs::OsRng;
-use std::io::{Read, Write};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -124,7 +123,7 @@ pub fn prove_withdrawal(
 ) -> Result<Proof, CircuitError> {
     let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
     
-    create_proof::<KZGCommitmentScheme<Bn256>, ProverSHPLONK<Bn256>, _, _, _, _>(
+    create_proof::<KZGCommitmentScheme<Bn256>, ProverSHPLONK<Bn256>, _, _, _>(
         &prover.params,
         &prover.pk,
         &[circuit],
@@ -150,7 +149,7 @@ pub fn verify_withdrawal(
     
     let strategy = SingleStrategy::new(&verifier.params);
     
-    verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<Bn256>, _, _, _>(
+    verify_proof::<KZGCommitmentScheme<Bn256>, VerifierSHPLONK<Bn256>, _, _>(
         &verifier.params,
         &verifier.vk,
         strategy,

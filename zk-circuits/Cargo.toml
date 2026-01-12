@@ -24,4 +24,3 @@ proptest = "1.4"
 
 [features]
 default = []
-parallel = ["halo2_proofs/parallel"]
