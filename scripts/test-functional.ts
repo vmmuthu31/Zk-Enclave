@@ -240,7 +240,7 @@ async function main() {
     const proof = ethers.hexlify(proofBytes);
     const publicInputs = [merkleRoot, nullifier, recipient, amount];
     const result = await zkVerifier.verifyProof(proof, publicInputs);
-    return result === true;
+    return Boolean(result);
   });
 
   console.log("\n" + "=".repeat(60));
