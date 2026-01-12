@@ -1,4 +1,4 @@
-FROM paritytech/contracts-ci-linux:3.0.1-20231110
+FROM paritytech/contracts-ci-linux:latest
 
 WORKDIR /code
 
