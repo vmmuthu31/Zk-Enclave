@@ -72,12 +72,15 @@ library MerkleTreeLib {
 
     function zeros(uint256 level) internal pure returns (bytes32) {
         if (level == 0) return bytes32(0);
-        
-        bytes32 result = bytes32(0);
-        for (uint256 i = 0; i < level; i++) {
-            result = hashPair(result, result);
-        }
-        return result;
+        if (level == 1) return bytes32(0x2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864);
+        if (level == 2) return bytes32(0x1069673dcdb12263df301a6ff584a7ec261a44cb9dc68df067a4774460b1f1e1);
+        if (level == 3) return bytes32(0x18f43331537ee2af2e3d758d50f72106467c6eea50371dd528d57eb2b856d238);
+        if (level == 4) return bytes32(0x07f9d837cb17b0d36320ffe93ba52345f1b728571a568265caac97559dbc952a);
+        if (level == 5) return bytes32(0x2b94cf5e8746b3f5c9631f4c5df32907a699c58c94b2ad4d7b5cec1639183f55);
+        if (level == 6) return bytes32(0x2dee93c5a666459646ea7d22cca9e1bcfed71e6951b953611d11dda32ea09d78);
+        if (level == 7) return bytes32(0x078295e5a22b84e982cf601eb639597b8b0515a88cb5ac7fa8a4aabe3c87349d);
+        if (level == 8) return bytes32(0x2fa5e5f18f6027a6501bec864564472a616b2e274a41211c5e5d0de4abcf7b24);
+        if (level >= 9) return bytes32(0x16b574c67f335db71e4222d86784166001642d4b1e3c2c72b49cc57864ee4f20);
     }
 
     function verify(
