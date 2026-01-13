@@ -8,9 +8,9 @@ import { WebZKProofClient } from "../lib/WebZKProofClient";
 import { createComplianceTree } from "../lib/merkle";
 
 const VAULT_CONFIG: VaultConfig = {
-  vaultAddress: "0xDb1E337E1C0F39C4b586D0b4cf121903Aa7bdda3",
-  zkVerifierAddress: "0x60c0b0B7b0b12001694355d45D072EB97AE38008",
-  aspRegistryAddress: "0x837F8F836aFA90db1248C12F07673711b3958636",
+  vaultAddress: "0x5215D0bf334668c5722bc94fEF1F82d95443Cf57",
+  zkVerifierAddress: "0x85cf5E0d401db57a48a0477eC0433114C8F5774d",
+  aspRegistryAddress: "0xc4eD99B7f7299635Edff19202e4Db635259A2353",
   chainId: 845320009,
   rpcUrl:
     CHAIN_CONFIG[845320009]?.rpcUrl ||
@@ -92,10 +92,7 @@ export default function Home() {
           const bal = await provider.getBalance(accounts[0].address);
           setBalance(formatEther(bal));
           const signer = await provider.getSigner();
-          const client = new WebZKProofClient(
-            provider,
-            VAULT_CONFIG.vaultAddress
-          );
+          const client = new WebZKProofClient();
           setZkClient(client);
           const newSdk = new PrivacyVaultSDK(VAULT_CONFIG, signer, client);
           setSdk(newSdk);
