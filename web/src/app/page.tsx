@@ -54,7 +54,7 @@ export default function Home() {
   const [connected, setConnected] = useState(false);
   const [address, setAddress] = useState("");
   const [balance, setBalance] = useState("0");
-  const [depositAmount, setDepositAmount] = useState("0.001");
+  const [depositAmount, setDepositAmount] = useState("0.01");
   const [savedNotes, setSavedNotes] = useState<UINote[]>([]);
   const [selectedNote, setSelectedNote] = useState<UINote | null>(null);
   const [withdrawAddress, setWithdrawAddress] = useState("");
@@ -75,13 +75,7 @@ export default function Home() {
     }
   }, []);
 
-  useEffect(() => {
-    loadVaultStats();
-    checkConnection();
-    setSavedNotes(loadNotes());
-  }, [loadVaultStats]);
-
-  async function checkConnection() {
+  const checkConnection = useCallback(async () => {
     if (typeof window !== "undefined" && window.ethereum) {
       try {
         const provider = new BrowserProvider(window.ethereum);
@@ -101,7 +95,25 @@ export default function Home() {
         console.error("Check connection error:", error);
       }
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    loadVaultStats();
+    checkConnection();
+    setSavedNotes(loadNotes());
+
+    if (window.ethereum) {
+      window.ethereum.on("accountsChanged", checkConnection);
+      window.ethereum.on("chainChanged", checkConnection);
+    }
+
+    return () => {
+      if (window.ethereum) {
+        window.ethereum.removeListener("accountsChanged", checkConnection);
+        window.ethereum.removeListener("chainChanged", checkConnection);
+      }
+    };
+  }, [loadVaultStats, checkConnection]);
 
   async function connectWallet() {
     if (typeof window !== "undefined" && window.ethereum) {
@@ -136,6 +148,9 @@ export default function Home() {
               chainName: "Horizen Sepolia",
               nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
               rpcUrls: [VAULT_CONFIG.rpcUrl],
+              blockExplorerUrls: [
+                "https://horizen-explorer-testnet.appchain.base.org",
+              ],
             },
           ],
         });
