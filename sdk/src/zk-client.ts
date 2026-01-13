@@ -21,6 +21,7 @@ interface WasmProofResult {
 let wasmModule: {
   generate_withdrawal_proof: (request: string) => string;
   verify_withdrawal_proof: (proof: string) => boolean;
+  generate_compliance_proof: (request: string) => string;
 } | null = null;
 
 export class ZKProofClient {
@@ -125,18 +126,43 @@ export class ZKProofClient {
 
   async generateComplianceProof(
     commitment: Uint8Array,
+    associationPath: Uint8Array[],
+    pathIndices: boolean[],
     associationRoot: Uint8Array
   ): Promise<ComplianceProof> {
-    const proofId = keccak256(
-      new Uint8Array([...commitment, ...associationRoot])
-    );
+    if (this.config.useRealProofs && this.wasmReady && wasmModule) {
+      const request = {
+        commitment: Array.from(commitment),
+        association_path: associationPath.map((p) => Array.from(p)),
+        path_indices: pathIndices,
+        association_root: Array.from(associationRoot),
+      };
+
+      const resultJson = wasmModule.generate_compliance_proof(
+        JSON.stringify(request)
+      );
+      const result: { success: boolean; proof: number[]; error?: string } =
+        JSON.parse(resultJson);
+
+      if (!result.success) {
+        throw new Error(`Compliance proof generation failed: ${result.error}`);
+      }
+
+      return {
+        id: keccak256(new Uint8Array(result.proof)),
+        associationRoot,
+        timestamp: Date.now(),
+        valid: true,
+        proof: new Uint8Array(result.proof),
+      };
+    }
 
     return {
-      id: proofId,
+      id: "mock-compliance-proof",
       associationRoot,
       timestamp: Date.now(),
       valid: true,
-      proof: new Uint8Array(256),
+      proof: new Uint8Array(64).fill(1),
     };
   }
 

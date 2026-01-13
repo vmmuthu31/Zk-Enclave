@@ -94,7 +94,7 @@ declare class ZKProofClient {
     generateWithdrawalProof(request: WithdrawalRequest): Promise<WithdrawalResult>;
     private generateRealProof;
     private generateFallbackProof;
-    generateComplianceProof(commitment: Uint8Array, associationRoot: Uint8Array): Promise<ComplianceProof>;
+    generateComplianceProof(commitment: Uint8Array, associationPath: Uint8Array[], pathIndices: boolean[], associationRoot: Uint8Array): Promise<ComplianceProof>;
     verifyProof(proofResult: WithdrawalResult): Promise<boolean>;
     isWasmReady(): boolean;
     private computeNullifierHash;
@@ -114,7 +114,7 @@ declare class PrivacyVaultSDK {
     constructor(config: VaultConfig, signer?: ethers.Signer, zkClient?: ZKProofClient);
     connect(signer: ethers.Signer): Promise<void>;
     deposit(amount: bigint): Promise<DepositResult>;
-    withdraw(note: DepositNote, recipient: string): Promise<WithdrawalResult>;
+    withdraw(note: DepositNote, recipient: string, complianceProof?: Uint8Array): Promise<WithdrawalResult>;
     getLatestRoot(): Promise<Uint8Array>;
     getNextLeafIndex(): Promise<number>;
     isNullifierUsed(nullifier: Uint8Array): Promise<boolean>;

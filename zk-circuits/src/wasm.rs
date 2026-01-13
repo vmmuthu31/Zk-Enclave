@@ -19,14 +19,17 @@ use sha2::{Sha256, Digest};
 use std::sync::OnceLock;
 
 use crate::withdrawal_circuit::{WithdrawalCircuit, WithdrawalWitness, WithdrawalPublicInputs, MERKLE_DEPTH};
+use crate::association_circuit::{AssociationCircuit, AssociationWitness, AssociationPublicInputs, ASSOCIATION_DEPTH};
 
 static PARAMS: OnceLock<ParamsKZG<Bn256>> = OnceLock::new();
 static PK: OnceLock<ProvingKey<G1Affine>> = OnceLock::new();
+static ASSOC_PK: OnceLock<ProvingKey<G1Affine>> = OnceLock::new();
 
 const PARAMS_BYTES: &[u8] = include_bytes!("params.bin");
 const PK_BYTES: &[u8] = include_bytes!("withdrawal_pk.bin");
+const ASSOC_PK_BYTES: &[u8] = include_bytes!("association_pk.bin");
 
-const K: u32 = 10;
+const K: u32 = 13; 
 
 #[wasm_bindgen(start)]
 pub fn init() {
@@ -49,6 +52,15 @@ fn get_pk() -> &'static ProvingKey<G1Affine> {
     })
 }
 
+fn get_assoc_pk() -> &'static ProvingKey<G1Affine> {
+    ASSOC_PK.get_or_init(|| {
+        ProvingKey::<G1Affine>::read::<_, AssociationCircuit<Fr>>(
+            &mut &ASSOC_PK_BYTES[..],
+            SerdeFormat::RawBytes
+        ).expect("Failed to read Association PK")
+    })
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct ProofRequest {
     pub secret: Vec<u8>,
@@ -62,10 +74,26 @@ pub struct ProofRequest {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct ComplianceRequest {
+    pub commitment: Vec<u8>,
+    pub association_path: Vec<Vec<u8>>,
+    pub path_indices: Vec<bool>,
+    pub association_root: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct ProofResult {
     pub success: bool,
     pub proof: Vec<u8>,
     pub nullifier_hash: Vec<u8>,
+    pub public_inputs: Vec<Vec<u8>>,
+    pub error: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ComplianceResult {
+    pub success: bool,
+    pub proof: Vec<u8>,
     pub public_inputs: Vec<Vec<u8>>,
     pub error: Option<String>,
 }
@@ -141,6 +169,87 @@ pub fn generate_withdrawal_proof(request_json: &str) -> String {
     }
 }
 
+#[wasm_bindgen]
+pub fn generate_compliance_proof(request_json: &str) -> String {
+    let request: ComplianceRequest = match serde_json::from_str(request_json) {
+        Ok(r) => r,
+        Err(e) => {
+            return serde_json::to_string(&ComplianceResult {
+                success: false,
+                proof: vec![],
+                public_inputs: vec![],
+                error: Some(format!("Parse error: {}", e)),
+            }).unwrap();
+        }
+    };
+
+    let mut commitment = [0u8; 32];
+    let mut association_root = [0u8; 32];
+
+    copy_bytes(&request.commitment, &mut commitment);
+    copy_bytes(&request.association_root, &mut association_root);
+
+    let association_path: Vec<[u8; 32]> = request.association_path
+        .iter()
+        .map(|p| {
+            let mut arr = [0u8; 32];
+            copy_bytes(p, &mut arr);
+            arr
+        })
+        .collect();
+
+    let mut path_indices = request.path_indices.clone();
+    while path_indices.len() < ASSOCIATION_DEPTH {
+        path_indices.push(false);
+    }
+
+    let params = get_params();
+    let pk = get_assoc_pk();
+
+    let witness = AssociationWitness {
+        commitment,
+        association_path: pad_association_path(association_path),
+        path_indices,
+    };
+
+    let public_inputs = AssociationPublicInputs {
+        association_root,
+        commitment_hash: commitment, 
+    };
+
+    let circuit = AssociationCircuit::<Fr>::new(witness, public_inputs.clone());
+
+    let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
+    
+    match create_proof::<KZGCommitmentScheme<Bn256>, ProverSHPLONK<'_, Bn256>, _, _, _, _>(
+        params,
+        pk,
+        &[circuit],
+        &[&[]], 
+        OsRng,
+        &mut transcript,
+    ) {
+        Ok(_) => {
+            let proof = transcript.finalize();
+             serde_json::to_string(&ComplianceResult {
+                success: true,
+                proof,
+                public_inputs: vec![
+                    public_inputs.association_root.to_vec(),
+                    public_inputs.commitment_hash.to_vec(),
+                ],
+                error: None,
+            }).unwrap()
+        },
+        Err(e) => serde_json::to_string(&ComplianceResult {
+            success: false,
+            proof: vec![],
+            public_inputs: vec![],
+            error: Some(format!("Proof generation failed: {:?}", e)),
+        }).unwrap()
+    }
+}
+
 fn generate_real_proof(circuit: WithdrawalCircuit<Fr>) -> Result<Vec<u8>, String> {
     let params = get_params();
     let pk = get_pk();
@@ -213,6 +322,13 @@ fn copy_bytes_20(src: &[u8], dst: &mut [u8; 20]) {
 
 fn pad_merkle_path(mut path: Vec<[u8; 32]>) -> Vec<[u8; 32]> {
     while path.len() < MERKLE_DEPTH {
+        path.push([0u8; 32]);
+    }
+    path
+}
+
+fn pad_association_path(mut path: Vec<[u8; 32]>) -> Vec<[u8; 32]> {
+    while path.len() < ASSOCIATION_DEPTH {
         path.push([0u8; 32]);
     }
     path

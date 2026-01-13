@@ -448,16 +448,35 @@ var ZKProofClient = class {
       timestamp: Date.now()
     };
   }
-  async generateComplianceProof(commitment, associationRoot) {
-    const proofId = keccak2562(
-      new Uint8Array([...commitment, ...associationRoot])
-    );
+  async generateComplianceProof(commitment, associationPath, pathIndices, associationRoot) {
+    if (this.config.useRealProofs && this.wasmReady && wasmModule) {
+      const request = {
+        commitment: Array.from(commitment),
+        association_path: associationPath.map((p) => Array.from(p)),
+        path_indices: pathIndices,
+        association_root: Array.from(associationRoot)
+      };
+      const resultJson = wasmModule.generate_compliance_proof(
+        JSON.stringify(request)
+      );
+      const result = JSON.parse(resultJson);
+      if (!result.success) {
+        throw new Error(`Compliance proof generation failed: ${result.error}`);
+      }
+      return {
+        id: keccak2562(new Uint8Array(result.proof)),
+        associationRoot,
+        timestamp: Date.now(),
+        valid: true,
+        proof: new Uint8Array(result.proof)
+      };
+    }
     return {
-      id: proofId,
+      id: "mock-compliance-proof",
       associationRoot,
       timestamp: Date.now(),
       valid: true,
-      proof: new Uint8Array(256)
+      proof: new Uint8Array(64).fill(1)
     };
   }
   async verifyProof(proofResult) {
@@ -578,7 +597,7 @@ var PrivacyVaultSDK = class {
       note
     };
   }
-  async withdraw(note, recipient) {
+  async withdraw(note, recipient, complianceProof) {
     if (!this.signer) {
       throw new Error("Signer required for withdrawals");
     }
@@ -606,7 +625,7 @@ var PrivacyVaultSDK = class {
       recipient,
       note.amount,
       zkProofResult.zkProof,
-      new Uint8Array(64),
+      complianceProof || new Uint8Array(64),
       { gasLimit: DEFAULT_GAS_LIMIT }
     );
     const receipt = await tx.wait();

@@ -48,9 +48,16 @@ export class WebZKProofClient extends ZKProofClient {
 
   async generateComplianceProof(
     commitment: Uint8Array,
+    associationPath: Uint8Array[],
+    pathIndices: boolean[],
     associationRoot: Uint8Array
   ): Promise<ComplianceProof> {
-    return super.generateComplianceProof(commitment, associationRoot);
+    return super.generateComplianceProof(
+      commitment,
+      associationPath,
+      pathIndices,
+      associationRoot
+    );
   }
 
   isWasmReady(): boolean {
