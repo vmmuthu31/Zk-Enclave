@@ -6,6 +6,9 @@ authors = ["zkenclave-team"]
 description = "Native Halo2 ZK circuits for privacy-preserving withdrawals"
 license = "MIT"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 ff = "0.13"
 rand = "0.8"
@@ -16,9 +19,18 @@ hex = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
+wasm-bindgen = "0.2"
+getrandom = { version = "0.2", features = ["js"] }
+console_error_panic_hook = { version = "0.1", optional = true }
+js-sys = "0.3"
 
 [dev-dependencies]
 proptest = "1.4"
+wasm-bindgen-test = "0.3"
 
 [features]
-default = []
+default = ["console_error_panic_hook"]
+
+[profile.release]
+opt-level = "s"
+lto = true
