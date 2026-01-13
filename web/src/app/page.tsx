@@ -164,10 +164,14 @@ export default function Home() {
     }
   }
 
+  const [txLink, setTxLink] = useState<string | null>(null);
+  const [includeCompliance, setIncludeCompliance] = useState(false);
+
   async function handleDeposit() {
     if (!sdk) return;
     setLoading(true);
     setStatus("Depositing…");
+    setTxLink(null);
 
     try {
       const amount = parseEther(depositAmount);
@@ -188,6 +192,11 @@ export default function Home() {
       saveNotes(updated);
 
       setStatus(`Deposited ${depositAmount} ETH`);
+      if (result.txHash) {
+        setTxLink(
+          `https://horizen-explorer-testnet.appchain.base.org/tx/${result.txHash}`
+        );
+      }
       await checkConnection();
       await loadVaultStats();
     } catch (error) {
@@ -197,12 +206,11 @@ export default function Home() {
     }
   }
 
-  const [includeCompliance, setIncludeCompliance] = useState(false);
-
   async function handleWithdraw() {
     if (!sdk || !selectedNote || !withdrawAddress || !zkClient) return;
     setLoading(true);
     setStatus("Withdrawing…");
+    setTxLink(null);
 
     try {
       const sdkNote: SDKDepositNote = {
@@ -230,7 +238,11 @@ export default function Home() {
         complianceProof = proofResult.proof;
       }
 
-      await sdk.withdraw(sdkNote, withdrawAddress, complianceProof);
+      const result = await sdk.withdraw(
+        sdkNote,
+        withdrawAddress,
+        complianceProof
+      );
 
       const updated = savedNotes.filter((n) => n.id !== selectedNote.id);
       setSavedNotes(updated);
@@ -238,6 +250,11 @@ export default function Home() {
       setSelectedNote(null);
 
       setStatus("Withdrawal complete");
+      if (result.txHash) {
+        setTxLink(
+          `https://horizen-explorer-testnet.appchain.base.org/tx/${result.txHash}`
+        );
+      }
       await checkConnection();
       await loadVaultStats();
     } catch (error) {
@@ -403,13 +420,23 @@ export default function Home() {
 
             {status && (
               <div
-                className={`border p-3 text-sm ${
+                className={`border p-3 text-sm flex flex-col gap-2 ${
                   status.includes("Error")
                     ? "border-red-900 text-red-400"
                     : "border-neutral-800 text-neutral-400"
                 }`}
               >
-                {status}
+                <div>{status}</div>
+                {txLink && (
+                  <a
+                    href={txLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-500 hover:text-emerald-400 underline truncate block"
+                  >
+                    View on Explorer →
+                  </a>
+                )}
               </div>
             )}
           </div>
