@@ -61,7 +61,7 @@ var MERKLE_TREE_DEPTH = 20;
 var FIELD_SIZE = BigInt(
   "21888242871839275222246405745257275088548364400416034343698204186575808495617"
 );
-var DEFAULT_GAS_LIMIT = 500000n;
+var DEFAULT_GAS_LIMIT = 1500000n;
 var DEFAULT_BATCH_SIZE = 10;
 var PROOF_EXPIRY_MS = 3e5;
 var CONTRACT_ADDRESSES = {
@@ -658,6 +658,71 @@ var PrivacyVaultSDK = class {
       merkleRoot: root,
       timestamp: Date.now()
     };
+  }
+  async withdrawViaTEE(note, recipient, teeEndpoint = "/api/tee-withdraw") {
+    if (!this.signer) {
+      throw new Error("Signer required for withdrawals");
+    }
+    const root = await this.getLatestRoot();
+    const merklePath = this._merkleTree.generateProof(note.leafIndex);
+    const response = await fetch(teeEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        commitment: Array.from(note.commitment),
+        nullifierSeed: Array.from(note.nullifierSeed),
+        secret: Array.from(note.secret),
+        amount: note.amount.toString(),
+        leafIndex: note.leafIndex,
+        recipient,
+        merklePath: merklePath.path.map((p) => Array.from(p)),
+        pathIndices: merklePath.indices,
+        merkleRoot: Array.from(root)
+      })
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "TEE withdrawal failed");
+    }
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || "TEE withdrawal failed");
+    }
+    const tx = await this.vault.withdraw(
+      result.nullifierHash,
+      bytesToHex(root),
+      recipient,
+      note.amount,
+      hexToBytes(result.zkProof),
+      this.serializeTEEAttestation(result.teeAttestation),
+      { gasLimit: DEFAULT_GAS_LIMIT }
+    );
+    const receipt = await tx.wait();
+    return {
+      success: true,
+      txHash: receipt.hash,
+      zkProof: hexToBytes(result.zkProof),
+      nullifierHash: hexToBytes(result.nullifierHash),
+      merkleRoot: root,
+      timestamp: Date.now()
+    };
+  }
+  serializeTEEAttestation(attestation) {
+    const enclaveId = hexToBytes(attestation.enclaveId);
+    const dataHash = hexToBytes(attestation.dataHash);
+    const signature = hexToBytes(attestation.signature);
+    const timestampBytes = new Uint8Array(8);
+    new DataView(timestampBytes.buffer).setBigUint64(
+      0,
+      BigInt(attestation.timestamp),
+      false
+    );
+    return new Uint8Array([
+      ...enclaveId,
+      ...timestampBytes,
+      ...dataHash,
+      ...signature
+    ]);
   }
   async getLatestRoot() {
     const root = await this.readVault.getLatestRoot();

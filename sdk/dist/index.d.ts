@@ -113,6 +113,8 @@ declare class PrivacyVaultSDK {
     connect(signer: ethers.Signer): Promise<void>;
     deposit(amount: bigint): Promise<DepositResult>;
     withdraw(note: DepositNote, recipient: string, complianceProof?: Uint8Array): Promise<WithdrawalResult>;
+    withdrawViaTEE(note: DepositNote, recipient: string, teeEndpoint?: string): Promise<WithdrawalResult>;
+    private serializeTEEAttestation;
     getLatestRoot(): Promise<Uint8Array>;
     getNextLeafIndex(): Promise<number>;
     isNullifierUsed(nullifier: Uint8Array): Promise<boolean>;
@@ -150,7 +152,7 @@ declare class MerkleTree {
 
 declare const MERKLE_TREE_DEPTH = 20;
 declare const FIELD_SIZE: bigint;
-declare const DEFAULT_GAS_LIMIT = 500000n;
+declare const DEFAULT_GAS_LIMIT = 1500000n;
 declare const DEFAULT_BATCH_SIZE = 10;
 declare const PROOF_EXPIRY_MS = 300000;
 declare const CONTRACT_ADDRESSES: {

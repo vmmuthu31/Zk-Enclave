@@ -169,6 +169,90 @@ export class PrivacyVaultSDK {
     };
   }
 
+  async withdrawViaTEE(
+    note: DepositNote,
+    recipient: string,
+    teeEndpoint: string = "/api/tee-withdraw"
+  ): Promise<WithdrawalResult> {
+    if (!this.signer) {
+      throw new Error("Signer required for withdrawals");
+    }
+
+    const root = await this.getLatestRoot();
+    const merklePath = this._merkleTree.generateProof(note.leafIndex);
+
+    const response = await fetch(teeEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        commitment: Array.from(note.commitment),
+        nullifierSeed: Array.from(note.nullifierSeed),
+        secret: Array.from(note.secret),
+        amount: note.amount.toString(),
+        leafIndex: note.leafIndex,
+        recipient,
+        merklePath: merklePath.path.map((p) => Array.from(p)),
+        pathIndices: merklePath.indices,
+        merkleRoot: Array.from(root),
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "TEE withdrawal failed");
+    }
+
+    const result = await response.json();
+
+    if (!result.success) {
+      throw new Error(result.error || "TEE withdrawal failed");
+    }
+
+    const tx = await this.vault.withdraw(
+      result.nullifierHash,
+      bytesToHex(root),
+      recipient,
+      note.amount,
+      hexToBytes(result.zkProof),
+      this.serializeTEEAttestation(result.teeAttestation),
+      { gasLimit: DEFAULT_GAS_LIMIT }
+    );
+
+    const receipt = await tx.wait();
+
+    return {
+      success: true,
+      txHash: receipt.hash,
+      zkProof: hexToBytes(result.zkProof),
+      nullifierHash: hexToBytes(result.nullifierHash),
+      merkleRoot: root,
+      timestamp: Date.now(),
+    };
+  }
+
+  private serializeTEEAttestation(attestation: {
+    enclaveId: string;
+    timestamp: number;
+    dataHash: string;
+    signature: string;
+  }): Uint8Array {
+    const enclaveId = hexToBytes(attestation.enclaveId);
+    const dataHash = hexToBytes(attestation.dataHash);
+    const signature = hexToBytes(attestation.signature);
+    const timestampBytes = new Uint8Array(8);
+    new DataView(timestampBytes.buffer).setBigUint64(
+      0,
+      BigInt(attestation.timestamp),
+      false
+    );
+    return new Uint8Array([
+      ...enclaveId,
+      ...timestampBytes,
+      ...dataHash,
+      ...signature,
+    ]);
+  }
+
   async getLatestRoot(): Promise<Uint8Array> {
     const root = await this.readVault.getLatestRoot();
     return hexToBytes(root);
