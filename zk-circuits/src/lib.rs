@@ -1,6 +1,13 @@
 mod poseidon;
 mod merkle;
 mod withdrawal_circuit;
+mod association_circuit;
+
+#[cfg(target_arch = "wasm32")]
+mod wasm;
+
+#[cfg(target_arch = "wasm32")]
+pub use wasm::*;
 
 pub use poseidon::{PoseidonChip, PoseidonConfig, poseidon_hash_native};
 pub use merkle::{MerkleTree, MerkleProof, merkle_hash};

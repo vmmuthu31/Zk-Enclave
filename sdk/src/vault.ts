@@ -26,6 +26,7 @@ export class PrivacyVaultSDK {
   private provider: ethers.Provider;
   private signer: ethers.Signer | null = null;
   private vault: ethers.Contract;
+  private readVault: ethers.Contract;
   private _aspRegistry: ethers.Contract;
   private zkClient: ZKProofClient;
   private config: VaultConfig;
@@ -43,6 +44,12 @@ export class PrivacyVaultSDK {
       config.vaultAddress,
       PRIVACY_VAULT_ABI,
       this.signer ?? this.provider
+    );
+
+    this.readVault = new ethers.Contract(
+      config.vaultAddress,
+      PRIVACY_VAULT_ABI,
+      this.provider
     );
 
     this._aspRegistry = new ethers.Contract(
@@ -157,17 +164,17 @@ export class PrivacyVaultSDK {
   }
 
   async getLatestRoot(): Promise<Uint8Array> {
-    const root = await this.vault.getLatestRoot();
+    const root = await this.readVault.getLatestRoot();
     return hexToBytes(root);
   }
 
   async getNextLeafIndex(): Promise<number> {
-    const index = await this.vault.getNextLeafIndex();
+    const index = await this.readVault.getNextLeafIndex();
     return Number(index);
   }
 
   async isNullifierUsed(nullifier: Uint8Array): Promise<boolean> {
-    return await this.vault.isNullifierUsed(bytesToHex(nullifier));
+    return await this.readVault.isNullifierUsed(bytesToHex(nullifier));
   }
 
   async isKnownRoot(root: Uint8Array): Promise<boolean> {

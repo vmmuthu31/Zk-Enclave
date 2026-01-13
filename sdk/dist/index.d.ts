@@ -85,6 +85,7 @@ declare class PrivacyVaultSDK {
     private provider;
     private signer;
     private vault;
+    private readVault;
     private _aspRegistry;
     private zkClient;
     private config;

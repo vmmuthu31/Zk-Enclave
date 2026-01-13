@@ -1,55 +1,96 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { BrowserProvider, parseEther, formatEther } from "ethers";
 import {
-  BrowserProvider,
-  parseEther,
-  formatEther,
-  keccak256,
-  randomBytes,
-} from "ethers";
-import { PRIVACY_VAULT_ABI, CHAIN_CONFIG } from "zkenclave-sdk";
+  PrivacyVaultSDK,
+  ZKProofClient,
+  CHAIN_CONFIG,
+  bytesToHex,
+} from "zkenclave-sdk";
+import type { DepositNote as SDKDepositNote, VaultConfig } from "zkenclave-sdk";
 
-const PRIVACY_VAULT_ADDRESS = "0x68F19280d3030eaE36B8Da42621B66e92a8AEA32";
-const CHAIN_ID = 845320009;
-const RPC_URL =
-  CHAIN_CONFIG[845320009]?.rpcUrl ||
-  "https://horizen-rpc-testnet.appchain.base.org";
+const VAULT_CONFIG: VaultConfig = {
+  vaultAddress: "0x68F19280d3030eaE36B8Da42621B66e92a8AEA32",
+  zkVerifierAddress: "0x68491614a84C0410E9Fc0CB59Fc60A4F9188687c",
+  aspRegistryAddress: "0xB041Cff58FB866c7f4326e0767c97B93434aBa9E",
+  chainId: 845320009,
+  rpcUrl:
+    CHAIN_CONFIG[845320009]?.rpcUrl ||
+    "https://horizen-rpc-testnet.appchain.base.org",
+};
 
-interface DepositNote {
+interface UINote {
+  id: string;
   secret: string;
   nullifier: string;
   commitment: string;
   amount: string;
   leafIndex: number;
+  timestamp: number;
+}
+
+const STORAGE_KEY = "privacy_vault_notes";
+
+function loadNotes(): UINote[] {
+  if (typeof window === "undefined") return [];
+  const stored = localStorage.getItem(STORAGE_KEY);
+  return stored ? JSON.parse(stored) : [];
+}
+
+function saveNotes(notes: UINote[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
 }
 
 export default function Home() {
+  const [sdk, setSdk] = useState<PrivacyVaultSDK | null>(null);
+  const [zkClient] = useState(() => new ZKProofClient());
   const [connected, setConnected] = useState(false);
   const [address, setAddress] = useState("");
   const [balance, setBalance] = useState("0");
-  const [depositAmount, setDepositAmount] = useState("0.01");
-  const [depositNote, setDepositNote] = useState<DepositNote | null>(null);
-  const [withdrawNote, setWithdrawNote] = useState("");
+  const [depositAmount, setDepositAmount] = useState("0.001");
+  const [savedNotes, setSavedNotes] = useState<UINote[]>([]);
+  const [selectedNote, setSelectedNote] = useState<UINote | null>(null);
   const [withdrawAddress, setWithdrawAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [vaultStats, setVaultStats] = useState({ deposits: 0, root: "" });
 
-  useEffect(() => {
-    checkConnection();
-    loadVaultStats();
+  const loadVaultStats = useCallback(async () => {
+    try {
+      const tempSdk = new PrivacyVaultSDK(VAULT_CONFIG);
+      const stats = await tempSdk.getVaultStats();
+      setVaultStats({
+        deposits: stats.nextLeafIndex,
+        root: bytesToHex(stats.latestRoot).slice(0, 16) + "…",
+      });
+    } catch (error) {
+      console.error("Failed to load vault stats:", error);
+    }
   }, []);
+
+  useEffect(() => {
+    loadVaultStats();
+    checkConnection();
+    setSavedNotes(loadNotes());
+  }, [loadVaultStats]);
 
   async function checkConnection() {
     if (typeof window !== "undefined" && window.ethereum) {
-      const provider = new BrowserProvider(window.ethereum);
-      const accounts = await provider.listAccounts();
-      if (accounts.length > 0) {
-        setAddress(accounts[0].address);
-        setConnected(true);
-        const bal = await provider.getBalance(accounts[0].address);
-        setBalance(formatEther(bal));
+      try {
+        const provider = new BrowserProvider(window.ethereum);
+        const accounts = await provider.listAccounts();
+        if (accounts.length > 0) {
+          setAddress(accounts[0].address);
+          setConnected(true);
+          const bal = await provider.getBalance(accounts[0].address);
+          setBalance(formatEther(bal));
+          const signer = await provider.getSigner();
+          const newSdk = new PrivacyVaultSDK(VAULT_CONFIG, signer);
+          setSdk(newSdk);
+        }
+      } catch (error) {
+        console.error("Check connection error:", error);
       }
     }
   }
@@ -59,38 +100,34 @@ export default function Home() {
       try {
         const provider = new BrowserProvider(window.ethereum);
         await provider.send("eth_requestAccounts", []);
-        await switchToHorizenSepolia();
+        await switchNetwork();
         await checkConnection();
       } catch (error) {
         console.error("Connection error:", error);
-        setStatus("Failed to connect wallet");
+        setStatus("Connection failed");
       }
     } else {
-      setStatus("Please install MetaMask");
+      setStatus("Install MetaMask");
     }
   }
 
-  async function switchToHorizenSepolia() {
+  async function switchNetwork() {
     if (!window.ethereum) return;
-
     try {
       await window.ethereum.request({
         method: "wallet_switchEthereumChain",
-        params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }],
+        params: [{ chainId: `0x${VAULT_CONFIG.chainId.toString(16)}` }],
       });
-    } catch (switchError: unknown) {
-      if ((switchError as { code: number }).code === 4902) {
+    } catch (e: unknown) {
+      if ((e as { code: number }).code === 4902) {
         await window.ethereum.request({
           method: "wallet_addEthereumChain",
           params: [
             {
-              chainId: `0x${CHAIN_ID.toString(16)}`,
-              chainName: "Horizen Sepolia Testnet",
+              chainId: `0x${VAULT_CONFIG.chainId.toString(16)}`,
+              chainName: "Horizen Sepolia",
               nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-              rpcUrls: [RPC_URL],
-              blockExplorerUrls: [
-                "https://explorer-horizen-testnet.appchain.base.org",
-              ],
+              rpcUrls: [VAULT_CONFIG.rpcUrl],
             },
           ],
         });
@@ -98,322 +135,237 @@ export default function Home() {
     }
   }
 
-  async function loadVaultStats() {
-    try {
-      const { ethers } = await import("ethers");
-      const provider = new ethers.JsonRpcProvider(RPC_URL);
-      const vault = new ethers.Contract(
-        PRIVACY_VAULT_ADDRESS,
-        PRIVACY_VAULT_ABI,
-        provider
-      );
-      const leafIndex = await vault.getNextLeafIndex();
-      const root = await vault.getLatestRoot();
-      setVaultStats({
-        deposits: Number(leafIndex),
-        root: root.slice(0, 18) + "...",
-      });
-    } catch (error) {
-      console.error("Failed to load vault stats:", error);
-    }
-  }
-
-  function generateNote(amount: string): DepositNote {
-    const secret = keccak256(randomBytes(32));
-    const nullifier = keccak256(randomBytes(32));
-    const commitment = keccak256(
-      new TextEncoder().encode(secret + nullifier + amount)
-    );
-    return {
-      secret,
-      nullifier,
-      commitment,
-      amount,
-      leafIndex: -1,
-    };
-  }
-
   async function handleDeposit() {
-    if (!connected) return;
+    if (!sdk) return;
     setLoading(true);
-    setStatus("Preparing deposit...");
+    setStatus("Depositing…");
 
     try {
-      const { ethers } = await import("ethers");
-      const provider = new BrowserProvider(window.ethereum!);
-      const signer = await provider.getSigner();
-      const note = generateNote(depositAmount);
-      const vault = new ethers.Contract(
-        PRIVACY_VAULT_ADDRESS,
-        PRIVACY_VAULT_ABI,
-        signer
-      );
+      const amount = parseEther(depositAmount);
+      const result = await sdk.deposit(amount);
 
-      setStatus("Sending transaction...");
-      const tx = await vault.deposit(note.commitment, {
-        value: parseEther(depositAmount),
-      });
+      const newNote: UINote = {
+        id: crypto.randomUUID(),
+        secret: bytesToHex(result.note.secret),
+        nullifier: bytesToHex(result.note.nullifierSeed),
+        commitment: bytesToHex(result.commitment),
+        amount: depositAmount,
+        leafIndex: result.leafIndex,
+        timestamp: Date.now(),
+      };
 
-      setStatus("Waiting for confirmation...");
-      const receipt = await tx.wait();
+      const updated = [...savedNotes, newNote];
+      setSavedNotes(updated);
+      saveNotes(updated);
 
-      const depositEvent = receipt.logs.find((log: { topics: string[] }) => {
-        try {
-          const parsed = vault.interface.parseLog({
-            topics: log.topics,
-            data: (log as { data: string }).data,
-          });
-          return parsed?.name === "Deposit";
-        } catch {
-          return false;
-        }
-      });
-
-      if (depositEvent) {
-        const parsed = vault.interface.parseLog({
-          topics: depositEvent.topics,
-          data: depositEvent.data,
-        });
-        note.leafIndex = Number(parsed?.args?.leafIndex ?? -1);
-      }
-
-      setDepositNote(note);
-      setStatus("✅ Deposit successful! Save your note below.");
+      setStatus(`Deposited ${depositAmount} ETH`);
       await checkConnection();
       await loadVaultStats();
     } catch (error) {
-      console.error("Deposit error:", error);
-      setStatus(`❌ Deposit failed: ${(error as Error).message}`);
+      setStatus(`Error: ${(error as Error).message.slice(0, 50)}`);
     } finally {
       setLoading(false);
     }
   }
 
   async function handleWithdraw() {
-    if (!connected || !withdrawNote || !withdrawAddress) return;
+    if (!sdk || !selectedNote || !withdrawAddress) return;
     setLoading(true);
-    setStatus("Processing withdrawal...");
+    setStatus("Withdrawing…");
 
     try {
-      const { ethers } = await import("ethers");
-      const provider = new BrowserProvider(window.ethereum!);
-      const signer = await provider.getSigner();
-      const note: DepositNote = JSON.parse(withdrawNote);
+      const sdkNote: SDKDepositNote = {
+        commitment: hexToBytes(selectedNote.commitment),
+        secret: hexToBytes(selectedNote.secret),
+        nullifierSeed: hexToBytes(selectedNote.nullifier),
+        amount: parseEther(selectedNote.amount),
+        leafIndex: selectedNote.leafIndex,
+        timestamp: selectedNote.timestamp,
+      };
 
-      const readProvider = new ethers.JsonRpcProvider(RPC_URL);
-      const readVault = new ethers.Contract(
-        PRIVACY_VAULT_ADDRESS,
-        PRIVACY_VAULT_ABI,
-        readProvider
-      );
-      const vault = new ethers.Contract(
-        PRIVACY_VAULT_ADDRESS,
-        PRIVACY_VAULT_ABI,
-        signer
-      );
+      await sdk.withdraw(sdkNote, withdrawAddress);
 
-      const nullifierHash = keccak256(
-        new TextEncoder().encode(note.nullifier + note.leafIndex)
-      );
+      const updated = savedNotes.filter((n) => n.id !== selectedNote.id);
+      setSavedNotes(updated);
+      saveNotes(updated);
+      setSelectedNote(null);
 
-      setStatus("Fetching latest root...");
-      const root = await readVault.getLatestRoot();
-
-      const zkProof = new Uint8Array(256);
-      zkProof[0] = 0x01;
-      const teeAttestation = new Uint8Array(64);
-
-      setStatus("Sending withdrawal transaction...");
-      const tx = await vault.withdraw(
-        nullifierHash,
-        root,
-        withdrawAddress,
-        parseEther(note.amount),
-        zkProof,
-        teeAttestation
-      );
-
-      setStatus("Waiting for confirmation...");
-      await tx.wait();
-
-      setStatus("✅ Withdrawal successful!");
-      setWithdrawNote("");
+      setStatus("Withdrawal complete");
       await checkConnection();
       await loadVaultStats();
     } catch (error) {
-      console.error("Withdrawal error:", error);
-      setStatus(`❌ Withdrawal failed: ${(error as Error).message}`);
+      setStatus(`Error: ${(error as Error).message.slice(0, 50)}`);
     } finally {
       setLoading(false);
     }
   }
 
+  function deleteNote(id: string) {
+    const updated = savedNotes.filter((n) => n.id !== id);
+    setSavedNotes(updated);
+    saveNotes(updated);
+    if (selectedNote?.id === id) setSelectedNote(null);
+  }
+
+  function hexToBytes(hex: string): Uint8Array {
+    const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
+    const bytes = new Uint8Array(clean.length / 2);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+    }
+    return bytes;
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 text-white">
-      <div className="max-w-4xl mx-auto px-6 py-12">
-        <header className="text-center mb-12">
-          <h1 className="text-5xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent mb-4">
-            Privacy Vault
-          </h1>
-          <p className="text-gray-400 text-lg">
-            Zero-Knowledge Private Deposits &amp; Withdrawals
-          </p>
-          <p className="text-xs text-gray-500 mt-2">
-            Powered by{" "}
-            <a
-              href="https://www.npmjs.com/package/zkenclave-sdk"
-              className="text-purple-400 hover:underline"
-            >
-              zkenclave-sdk
-            </a>
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 font-mono">
+      <div className="max-w-2xl mx-auto px-4 py-8">
+        {/* Header */}
+        <header className="mb-8 border-b border-neutral-800 pb-6">
+          <h1 className="text-2xl font-bold tracking-tight">Privacy Vault</h1>
+          <p className="text-neutral-500 text-sm mt-1">
+            zkenclave-sdk • Horizen Sepolia
           </p>
         </header>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/10">
-            <p className="text-gray-400 text-sm">Total Deposits</p>
-            <p className="text-3xl font-bold text-purple-400">
-              {vaultStats.deposits}
-            </p>
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-4 mb-8 text-sm">
+          <div className="border border-neutral-800 p-3">
+            <p className="text-neutral-500">Deposits</p>
+            <p className="text-lg">{vaultStats.deposits}</p>
           </div>
-          <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/10">
-            <p className="text-gray-400 text-sm">Merkle Root</p>
-            <p className="text-sm font-mono text-purple-400 truncate">
-              {vaultStats.root || "Loading..."}
-            </p>
+          <div className="border border-neutral-800 p-3">
+            <p className="text-neutral-500">Root</p>
+            <p className="text-xs truncate">{vaultStats.root || "—"}</p>
           </div>
-          <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/10">
-            <p className="text-gray-400 text-sm">Network</p>
-            <p className="text-lg font-bold text-green-400">Horizen Sepolia</p>
+          <div className="border border-neutral-800 p-3">
+            <p className="text-neutral-500">SDK</p>
+            <p className={sdk ? "text-green-500" : "text-yellow-500"}>
+              {sdk ? "Ready" : "—"}
+            </p>
           </div>
         </div>
 
         {!connected ? (
-          <div className="text-center">
-            <button
-              onClick={connectWallet}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 px-8 py-4 rounded-xl font-bold text-lg transition-all transform hover:scale-105 shadow-lg"
-            >
-              Connect Wallet
-            </button>
-          </div>
+          <button
+            onClick={connectWallet}
+            className="w-full border border-neutral-700 hover:bg-neutral-900 py-3 transition-colors"
+          >
+            Connect Wallet
+          </button>
         ) : (
-          <div className="space-y-8">
-            <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/10">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-gray-400 text-sm">Connected</p>
-                  <p className="font-mono text-sm">{address}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-gray-400 text-sm">Balance</p>
-                  <p className="text-xl font-bold text-green-400">
-                    {parseFloat(balance).toFixed(4)} ETH
-                  </p>
-                </div>
+          <div className="space-y-6">
+            {/* Wallet */}
+            <div className="border border-neutral-800 p-4 flex justify-between items-center text-sm">
+              <span className="text-neutral-500">
+                {address.slice(0, 8)}…{address.slice(-6)}
+              </span>
+              <span>{parseFloat(balance).toFixed(4)} ETH</span>
+            </div>
+
+            {/* Deposit */}
+            <div className="border border-neutral-800 p-4">
+              <h2 className="text-sm text-neutral-500 mb-3">DEPOSIT</h2>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  className="flex-1 bg-transparent border border-neutral-700 px-3 py-2 text-sm focus:outline-none focus:border-neutral-500"
+                  step="0.001"
+                  min="0.001"
+                />
+                <button
+                  onClick={handleDeposit}
+                  disabled={loading || !sdk}
+                  className="border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-50 transition-colors"
+                >
+                  {loading ? "…" : "Deposit"}
+                </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/10">
-                <h2 className="text-2xl font-bold mb-6 text-purple-400">
-                  Deposit
-                </h2>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm text-gray-400 mb-2">
-                      Amount (ETH)
-                    </label>
-                    <input
-                      type="number"
-                      value={depositAmount}
-                      onChange={(e) => setDepositAmount(e.target.value)}
-                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500"
-                      step="0.01"
-                      min="0.001"
-                    />
-                  </div>
-                  <button
-                    onClick={handleDeposit}
-                    disabled={loading}
-                    className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 py-3 rounded-xl font-bold transition-all disabled:opacity-50"
-                  >
-                    {loading ? "Processing..." : "Deposit"}
-                  </button>
-                </div>
-
-                {depositNote && (
-                  <div className="mt-6 p-4 bg-green-500/10 border border-green-500/30 rounded-xl">
-                    <p className="text-green-400 font-bold mb-2">
-                      🔐 Save this note securely!
-                    </p>
-                    <textarea
-                      readOnly
-                      value={JSON.stringify(depositNote, null, 2)}
-                      className="w-full bg-black/30 rounded-lg p-3 text-xs font-mono h-32"
-                    />
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(
-                          JSON.stringify(depositNote)
-                        );
-                        setStatus("Note copied to clipboard!");
-                      }}
-                      className="mt-2 text-sm text-purple-400 hover:text-purple-300"
+            {/* Saved Notes */}
+            <div className="border border-neutral-800 p-4">
+              <h2 className="text-sm text-neutral-500 mb-3">
+                NOTES ({savedNotes.length})
+              </h2>
+              {savedNotes.length === 0 ? (
+                <p className="text-neutral-600 text-sm">No saved notes</p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {savedNotes.map((note) => (
+                    <div
+                      key={note.id}
+                      onClick={() => setSelectedNote(note)}
+                      className={`flex justify-between items-center p-2 cursor-pointer text-sm border ${
+                        selectedNote?.id === note.id
+                          ? "border-neutral-500 bg-neutral-900"
+                          : "border-neutral-800 hover:border-neutral-700"
+                      }`}
                     >
-                      📋 Copy Note
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/10">
-                <h2 className="text-2xl font-bold mb-6 text-pink-400">
-                  Withdraw
-                </h2>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm text-gray-400 mb-2">
-                      Deposit Note (JSON)
-                    </label>
-                    <textarea
-                      value={withdrawNote}
-                      onChange={(e) => setWithdrawNote(e.target.value)}
-                      placeholder="Paste your deposit note here..."
-                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 focus:outline-none focus:border-pink-500 h-24 text-xs font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-400 mb-2">
-                      Recipient Address
-                    </label>
-                    <input
-                      type="text"
-                      value={withdrawAddress}
-                      onChange={(e) => setWithdrawAddress(e.target.value)}
-                      placeholder="0x..."
-                      className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 focus:outline-none focus:border-pink-500 font-mono text-sm"
-                    />
-                  </div>
-                  <button
-                    onClick={handleWithdraw}
-                    disabled={loading || !withdrawNote || !withdrawAddress}
-                    className="w-full bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 py-3 rounded-xl font-bold transition-all disabled:opacity-50"
-                  >
-                    {loading ? "Processing..." : "Withdraw"}
-                  </button>
+                      <div>
+                        <span className="text-neutral-400">
+                          {note.amount} ETH
+                        </span>
+                        <span className="text-neutral-600 ml-2 text-xs">
+                          #{note.leafIndex === -1 ? "pending" : note.leafIndex}
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteNote(note.id);
+                        }}
+                        className="text-neutral-600 hover:text-red-500 text-xs"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
                 </div>
+              )}
+            </div>
+
+            {/* Withdraw */}
+            <div className="border border-neutral-800 p-4">
+              <h2 className="text-sm text-neutral-500 mb-3">WITHDRAW</h2>
+              <div className="space-y-3">
+                <div className="text-sm">
+                  <span className="text-neutral-500">Selected: </span>
+                  {selectedNote ? (
+                    <span>{selectedNote.amount} ETH</span>
+                  ) : (
+                    <span className="text-neutral-600">
+                      Select a note above
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={withdrawAddress}
+                  onChange={(e) => setWithdrawAddress(e.target.value)}
+                  placeholder="Recipient 0x…"
+                  className="w-full bg-transparent border border-neutral-700 px-3 py-2 text-sm focus:outline-none focus:border-neutral-500"
+                />
+                <button
+                  onClick={handleWithdraw}
+                  disabled={
+                    loading || !sdk || !selectedNote || !withdrawAddress
+                  }
+                  className="w-full border border-neutral-700 py-2 text-sm hover:bg-neutral-900 disabled:opacity-50 transition-colors"
+                >
+                  {loading ? "Processing…" : "Withdraw"}
+                </button>
               </div>
             </div>
 
+            {/* Status */}
             {status && (
               <div
-                className={`p-4 rounded-xl text-center ${
-                  status.includes("✅")
-                    ? "bg-green-500/20 border border-green-500/30"
-                    : status.includes("❌")
-                      ? "bg-red-500/20 border border-red-500/30"
-                      : "bg-purple-500/20 border border-purple-500/30"
+                className={`border p-3 text-sm ${
+                  status.includes("Error")
+                    ? "border-red-900 text-red-400"
+                    : "border-neutral-800 text-neutral-400"
                 }`}
               >
                 {status}
@@ -422,14 +374,9 @@ export default function Home() {
           </div>
         )}
 
-        <footer className="mt-16 text-center text-gray-500 text-sm">
-          <p>Privacy Vault • Zero-Knowledge Proofs • Horizen Sepolia</p>
-          <p className="mt-2">
-            SDK:{" "}
-            <code className="bg-white/10 px-2 py-1 rounded">
-              zkenclave-sdk@0.1.0
-            </code>
-          </p>
+        {/* Footer */}
+        <footer className="mt-12 pt-6 border-t border-neutral-800 text-neutral-600 text-xs">
+          <p>npm install zkenclave-sdk</p>
         </footer>
       </div>
     </div>

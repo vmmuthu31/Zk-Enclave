@@ -428,6 +428,7 @@ var PrivacyVaultSDK = class {
   provider;
   signer = null;
   vault;
+  readVault;
   _aspRegistry;
   zkClient;
   config;
@@ -442,6 +443,11 @@ var PrivacyVaultSDK = class {
       config.vaultAddress,
       PRIVACY_VAULT_ABI,
       this.signer ?? this.provider
+    );
+    this.readVault = new ethers.Contract(
+      config.vaultAddress,
+      PRIVACY_VAULT_ABI,
+      this.provider
     );
     this._aspRegistry = new ethers.Contract(
       config.aspRegistryAddress,
@@ -535,15 +541,15 @@ var PrivacyVaultSDK = class {
     };
   }
   async getLatestRoot() {
-    const root = await this.vault.getLatestRoot();
+    const root = await this.readVault.getLatestRoot();
     return hexToBytes(root);
   }
   async getNextLeafIndex() {
-    const index = await this.vault.getNextLeafIndex();
+    const index = await this.readVault.getNextLeafIndex();
     return Number(index);
   }
   async isNullifierUsed(nullifier) {
-    return await this.vault.isNullifierUsed(bytesToHex(nullifier));
+    return await this.readVault.isNullifierUsed(bytesToHex(nullifier));
   }
   async isKnownRoot(root) {
     return await this.vault.isKnownRoot(bytesToHex(root));
