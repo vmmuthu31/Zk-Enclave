@@ -230,7 +230,6 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-200 p-8 font-mono">
       <div className="max-w-md mx-auto space-y-8">
-        {/* Header */}
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-xl font-bold text-neutral-100 tracking-tight">
@@ -253,7 +252,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Connection */}
         {!connected ? (
           <button
             onClick={connectWallet}
@@ -268,7 +266,6 @@ export default function Home() {
           </button>
         ) : (
           <div className="space-y-6">
-            {/* Account Info */}
             <div className="grid grid-cols-2 gap-4">
               <div className="border border-neutral-800 p-3">
                 <div className="text-xs text-neutral-500 mb-1">ADDRESS</div>
@@ -280,7 +277,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Deposit */}
             <div className="border border-neutral-800 p-4">
               <h2 className="text-sm text-neutral-500 mb-3">DEPOSIT</h2>
               <div className="flex gap-2">
@@ -300,7 +296,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Notes */}
             <div className="border border-neutral-800 p-4">
               <h2 className="text-sm text-neutral-500 mb-3">YOUR NOTES</h2>
               <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -334,7 +329,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Withdraw */}
             <div className="border border-neutral-800 p-4">
               <h2 className="text-sm text-neutral-500 mb-3">WITHDRAW</h2>
               <div className="space-y-3">
@@ -384,7 +378,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Status */}
             {status && (
               <div
                 className={`border p-3 text-sm ${
@@ -398,11 +391,6 @@ export default function Home() {
             )}
           </div>
         )}
-
-        {/* Footer */}
-        <footer className="mt-12 pt-6 border-t border-neutral-800 text-neutral-600 text-xs">
-          <p>npm install zkenclave-sdk</p>
-        </footer>
       </div>
     </div>
   );
