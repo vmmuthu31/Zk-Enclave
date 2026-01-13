@@ -1,7 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
-export const generate_compliance_proof: (a: number, b: number) => [number, number];
 export const generate_withdrawal_proof: (a: number, b: number) => [number, number];
 export const verify_withdrawal_proof: (a: number, b: number) => number;
 export const init: () => void;

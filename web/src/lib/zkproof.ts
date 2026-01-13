@@ -16,7 +16,7 @@ export async function initWasm(): Promise<boolean> {
 
   initPromise = (async () => {
     try {
-      await init("/wasm/zkenclave_circuits_bg.wasm");
+      await init({ module_or_path: "/wasm/zkenclave_circuits_bg.wasm" });
       wasmInitialized = true;
     } catch (error) {
       console.error("Failed to initialize WASM:", error);

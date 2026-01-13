@@ -93,11 +93,9 @@ declare class ZKProofClient {
     private loadWasm;
     generateWithdrawalProof(request: WithdrawalRequest): Promise<WithdrawalResult>;
     private generateRealProof;
-    private generateFallbackProof;
     generateComplianceProof(commitment: Uint8Array, associationPath: Uint8Array[], pathIndices: boolean[], associationRoot: Uint8Array): Promise<ComplianceProof>;
     verifyProof(proofResult: WithdrawalResult): Promise<boolean>;
     isWasmReady(): boolean;
-    private computeNullifierHash;
     private addressToBytes;
     private hexToBytes;
 }

@@ -1,8 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 
-export function generate_compliance_proof(request_json: string): string;
-
 export function generate_withdrawal_proof(request_json: string): string;
 
 export function init(): void;
@@ -13,7 +11,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly generate_compliance_proof: (a: number, b: number) => [number, number];
   readonly generate_withdrawal_proof: (a: number, b: number) => [number, number];
   readonly verify_withdrawal_proof: (a: number, b: number) => number;
   readonly init: () => void;

@@ -8,9 +8,9 @@ import { WebZKProofClient } from "../lib/WebZKProofClient";
 import { createComplianceTree } from "../lib/merkle";
 
 const VAULT_CONFIG: VaultConfig = {
-  vaultAddress: "0x68F19280d3030eaE36B8Da42621B66e92a8AEA32",
-  zkVerifierAddress: "0x68491614a84C0410E9Fc0CB59Fc60A4F9188687c",
-  aspRegistryAddress: "0xB041Cff58FB866c7f4326e0767c97B93434aBa9E",
+  vaultAddress: "0xDb1E337E1C0F39C4b586D0b4cf121903Aa7bdda3",
+  zkVerifierAddress: "0x60c0b0B7b0b12001694355d45D072EB97AE38008",
+  aspRegistryAddress: "0x837F8F836aFA90db1248C12F07673711b3958636",
   chainId: 845320009,
   rpcUrl:
     CHAIN_CONFIG[845320009]?.rpcUrl ||
@@ -49,6 +49,7 @@ function hexToBytes(hex: string): Uint8Array {
 }
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
   const [sdk, setSdk] = useState<PrivacyVaultSDK | null>(null);
   const [zkClient, setZkClient] = useState<WebZKProofClient | null>(null);
   const [connected, setConnected] = useState(false);
@@ -62,9 +63,14 @@ export default function Home() {
   const [status, setStatus] = useState("");
   const [vaultStats, setVaultStats] = useState({ deposits: 0, root: "" });
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const loadVaultStats = useCallback(async () => {
     try {
-      const tempSdk = new PrivacyVaultSDK(VAULT_CONFIG);
+      const tempClient = new WebZKProofClient();
+      const tempSdk = new PrivacyVaultSDK(VAULT_CONFIG, undefined, tempClient);
       const stats = await tempSdk.getVaultStats();
       setVaultStats({
         deposits: stats.nextLeafIndex,
@@ -86,7 +92,10 @@ export default function Home() {
           const bal = await provider.getBalance(accounts[0].address);
           setBalance(formatEther(bal));
           const signer = await provider.getSigner();
-          const client = new WebZKProofClient();
+          const client = new WebZKProofClient(
+            provider,
+            VAULT_CONFIG.vaultAddress
+          );
           setZkClient(client);
           const newSdk = new PrivacyVaultSDK(VAULT_CONFIG, signer, client);
           setSdk(newSdk);
@@ -241,6 +250,8 @@ export default function Home() {
       setLoading(false);
     }
   }
+
+  if (!mounted) return null;
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-200 p-8 font-mono">

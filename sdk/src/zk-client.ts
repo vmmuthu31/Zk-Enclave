@@ -30,7 +30,7 @@ export class ZKProofClient {
 
   constructor(config?: ZKProofClientConfig) {
     this.config = config ?? { useRealProofs: true };
-    if (this.config.useRealProofs) {
+    if (this.config.useRealProofs !== false) {
       this.loadWasm();
     }
   }
@@ -41,24 +41,22 @@ export class ZKProofClient {
       return;
     }
 
-    try {
-      const wasmPath = this.config.wasmPath ?? "zkenclave-circuits";
-      const module = await import(/* webpackIgnore: true */ wasmPath);
-      wasmModule = module;
-      this.wasmReady = true;
-    } catch {
-      console.warn("WASM module not available, falling back to mock proofs");
-      this.wasmReady = false;
-    }
+    const wasmPath = this.config.wasmPath ?? "zkenclave-circuits";
+    const module = await import(/* webpackIgnore: true */ wasmPath);
+    wasmModule = module;
+    this.wasmReady = true;
   }
 
   async generateWithdrawalProof(
     request: WithdrawalRequest
   ): Promise<WithdrawalResult> {
-    if (this.config.useRealProofs && this.wasmReady && wasmModule) {
-      return this.generateRealProof(request);
+    if (!this.wasmReady || !wasmModule) {
+      throw new Error(
+        "WASM module not loaded. Make sure zkenclave-circuits is properly installed and configured."
+      );
     }
-    return this.generateFallbackProof(request);
+
+    return this.generateRealProof(request);
   }
 
   private async generateRealProof(
@@ -95,109 +93,63 @@ export class ZKProofClient {
     };
   }
 
-  private async generateFallbackProof(
-    request: WithdrawalRequest
-  ): Promise<WithdrawalResult> {
-    const nullifierHash = this.computeNullifierHash(
-      request.nullifier,
-      request.leafIndex
-    );
-    const merkleRoot = request.merkleRoot ?? new Uint8Array(32);
-
-    const proof = new Uint8Array(256);
-    proof[0] = 0x01;
-
-    const amountHex = toBeHex(request.amount, 32);
-    const amountBytes = this.hexToBytes(amountHex);
-    proof.set(amountBytes.slice(0, 32), 1);
-    proof.set(request.commitment.slice(0, 32), 33);
-
-    proof[250] = 0x5a;
-    proof[251] = 0x4b;
-
-    return {
-      success: true,
-      zkProof: proof,
-      nullifierHash,
-      merkleRoot,
-      timestamp: Date.now(),
-    };
-  }
-
   async generateComplianceProof(
     commitment: Uint8Array,
     associationPath: Uint8Array[],
     pathIndices: boolean[],
     associationRoot: Uint8Array
   ): Promise<ComplianceProof> {
-    if (this.config.useRealProofs && this.wasmReady && wasmModule) {
-      const request = {
-        commitment: Array.from(commitment),
-        association_path: associationPath.map((p) => Array.from(p)),
-        path_indices: pathIndices,
-        association_root: Array.from(associationRoot),
-      };
-
-      const resultJson = wasmModule.generate_compliance_proof(
-        JSON.stringify(request)
+    if (!this.wasmReady || !wasmModule) {
+      throw new Error(
+        "WASM module not loaded. Make sure zkenclave-circuits is properly installed and configured."
       );
-      const result: { success: boolean; proof: number[]; error?: string } =
-        JSON.parse(resultJson);
+    }
 
-      if (!result.success) {
-        throw new Error(`Compliance proof generation failed: ${result.error}`);
-      }
+    const request = {
+      commitment: Array.from(commitment),
+      association_path: associationPath.map((p) => Array.from(p)),
+      path_indices: pathIndices,
+      association_root: Array.from(associationRoot),
+    };
 
-      return {
-        id: keccak256(new Uint8Array(result.proof)),
-        associationRoot,
-        timestamp: Date.now(),
-        valid: true,
-        proof: new Uint8Array(result.proof),
-      };
+    const resultJson = wasmModule.generate_compliance_proof(
+      JSON.stringify(request)
+    );
+    const result: { success: boolean; proof: number[]; error?: string } =
+      JSON.parse(resultJson);
+
+    if (!result.success) {
+      throw new Error(`Compliance proof generation failed: ${result.error}`);
     }
 
     return {
-      id: "mock-compliance-proof",
+      id: keccak256(new Uint8Array(result.proof)),
       associationRoot,
       timestamp: Date.now(),
       valid: true,
-      proof: new Uint8Array(64).fill(1),
+      proof: new Uint8Array(result.proof),
     };
   }
 
   async verifyProof(proofResult: WithdrawalResult): Promise<boolean> {
-    if (this.wasmReady && wasmModule) {
-      const proofJson = JSON.stringify({
-        success: proofResult.success,
-        proof: Array.from(proofResult.zkProof),
-        nullifier_hash: Array.from(proofResult.nullifierHash),
-        public_inputs: [],
-        error: null,
-      });
-      return wasmModule.verify_withdrawal_proof(proofJson);
+    if (!this.wasmReady || !wasmModule) {
+      throw new Error(
+        "WASM module not loaded. Make sure zkenclave-circuits is properly installed and configured."
+      );
     }
 
-    return (
-      proofResult.success &&
-      proofResult.zkProof.length > 0 &&
-      proofResult.zkProof[250] === 0x5a &&
-      proofResult.zkProof[251] === 0x4b
-    );
+    const proofJson = JSON.stringify({
+      success: proofResult.success,
+      proof: Array.from(proofResult.zkProof),
+      nullifier_hash: Array.from(proofResult.nullifierHash),
+      public_inputs: [],
+      error: null,
+    });
+    return wasmModule.verify_withdrawal_proof(proofJson);
   }
 
   isWasmReady(): boolean {
     return this.wasmReady;
-  }
-
-  private computeNullifierHash(
-    nullifier: Uint8Array,
-    leafIndex: number
-  ): Uint8Array {
-    const indexBytes = new TextEncoder().encode(leafIndex.toString());
-    const combined = new Uint8Array([...nullifier, ...indexBytes]);
-    const hash = keccak256(combined);
-    return this.hexToBytes(hash);
   }
 
   private addressToBytes(address: string): number[] {

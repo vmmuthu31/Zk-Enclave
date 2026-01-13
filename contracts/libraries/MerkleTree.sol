@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
+import "./PoseidonT3.sol";
+
 library MerkleTreeLib {
     uint256 constant ROOT_HISTORY_SIZE = 30;
 
@@ -55,7 +57,6 @@ library MerkleTreeLib {
 
     function isKnownRoot(MerkleTree storage tree, bytes32 root) internal view returns (bool) {
         if (root == bytes32(0)) return false;
-        
         return tree.knownRoots[root];
     }
 
@@ -64,7 +65,9 @@ library MerkleTreeLib {
     }
 
     function hashPair(bytes32 left, bytes32 right) internal pure returns (bytes32) {
-        return sha256(abi.encodePacked(left, right));
+        uint256 l = uint256(left);
+        uint256 r = uint256(right);
+        return bytes32(PoseidonT3.hash([l, r]));
     }
 
     function zeros(uint256 level) internal pure returns (bytes32) {
