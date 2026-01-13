@@ -1,7 +1,7 @@
-mod poseidon;
-mod merkle;
-mod withdrawal_circuit;
-mod association_circuit;
+pub mod poseidon;
+pub mod merkle;
+pub mod withdrawal_circuit;
+pub mod association_circuit;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm;
