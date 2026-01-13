@@ -12,6 +12,8 @@ export interface WithdrawalRequest {
   nullifier: Uint8Array;
   recipient: string;
   amount: bigint;
+  leafIndex: number;
+  merkleRoot?: Uint8Array;
   merklePath: Uint8Array[];
   pathIndices: boolean[];
 }
@@ -20,7 +22,9 @@ export interface WithdrawalResult {
   success: boolean;
   txHash?: string;
   zkProof: Uint8Array;
-  teeAttestation: Uint8Array;
+  nullifierHash: Uint8Array;
+  merkleRoot: Uint8Array;
+  timestamp: number;
   error?: string;
 }
 
@@ -33,10 +37,12 @@ export interface DepositResult {
 }
 
 export interface ComplianceProof {
-  depositCommitment: Uint8Array;
+  id: string;
+  depositCommitment?: Uint8Array;
   associationRoot: Uint8Array;
-  zkProof: Uint8Array;
-  aspSignature: Uint8Array;
+  zkProof?: Uint8Array;
+  proof: Uint8Array;
+  valid: boolean;
   timestamp: number;
 }
 
@@ -57,7 +63,6 @@ export interface VaultConfig {
   vaultAddress: string;
   zkVerifierAddress: string;
   aspRegistryAddress: string;
-  phatContractAddress: string;
   chainId: number;
   rpcUrl: string;
 }

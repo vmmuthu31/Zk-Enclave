@@ -17,10 +17,15 @@ var CONTRACT_ADDRESSES = {
       zkVerifier: "0x0000000000000000000000000000000000000000",
       aspRegistry: "0x0000000000000000000000000000000000000000"
     },
-    sepolia: {
-      vault: "0x0000000000000000000000000000000000000000",
-      zkVerifier: "0x0000000000000000000000000000000000000000",
-      aspRegistry: "0x0000000000000000000000000000000000000000"
+    celoSepolia: {
+      vault: "0x68F19280d3030eaE36B8Da42621B66e92a8AEA32",
+      zkVerifier: "0x68491614a84C0410E9Fc0CB59Fc60A4F9188687c",
+      aspRegistry: "0xB041Cff58FB866c7f4326e0767c97B93434aBa9E"
+    },
+    horizenSepolia: {
+      vault: "0x68F19280d3030eaE36B8Da42621B66e92a8AEA32",
+      zkVerifier: "0x68491614a84C0410E9Fc0CB59Fc60A4F9188687c",
+      aspRegistry: "0xB041Cff58FB866c7f4326e0767c97B93434aBa9E"
     }
   },
   phala: {
@@ -38,15 +43,20 @@ var CHAIN_CONFIG = {
     rpcUrl: "https://eth.llamarpc.com",
     explorer: "https://etherscan.io"
   },
-  11155111: {
-    name: "Sepolia Testnet",
-    rpcUrl: "https://rpc.sepolia.org",
-    explorer: "https://sepolia.etherscan.io"
+  11142220: {
+    name: "Celo Sepolia",
+    rpcUrl: "https://forno.celo-sepolia.celo-testnet.org",
+    explorer: "https://sepolia.celoscan.io"
   },
   2035: {
     name: "Phala L2",
     rpcUrl: "https://rpc.phala.network",
     explorer: "https://explorer.phala.network"
+  },
+  845320009: {
+    name: "Horizen Sepolia Testnet",
+    rpcUrl: "https://horizen-rpc-testnet.appchain.base.org",
+    explorer: "https://explorer-horizen-testnet.appchain.base.org"
   }
 };
 var POSEIDON_CONSTANTS = {
@@ -354,203 +364,62 @@ var MerkleTree = class {
   }
 };
 
-// src/phat-client.ts
-import {
-  OnChainRegistry,
-  PinkContractPromise,
-  signCertificate
-} from "@phala/sdk";
-import { ApiPromise, WsProvider } from "@polkadot/api";
-var PhatClient = class {
-  contractAddress;
-  endpoint;
-  timeout;
-  registry;
-  api;
-  contract;
-  certificate;
-  constructor(contractAddress, config) {
-    this.contractAddress = contractAddress;
-    this.endpoint = config?.endpoint ?? "wss://poc5.phala.network/ws";
-    this.timeout = config?.timeout ?? 3e4;
+// src/zk-client.ts
+import { keccak256 as keccak2562, toBeHex } from "ethers";
+var ZKProofClient = class {
+  config;
+  constructor(config) {
+    this.config = config ?? {};
   }
-  async connect(signer) {
-    const provider = new WsProvider(this.endpoint);
-    this.api = await ApiPromise.create({ provider });
-    this.registry = await OnChainRegistry.create(this.api);
-    const abi = {
-      source: { hash: "0x", language: "ink!", compiler: "rustc", wasm: "0x" },
-      contract: { name: "zkenclave", version: "0.1.0", authors: [] },
-      spec: {
-        constructors: [],
-        docs: [],
-        events: [],
-        messages: [
-          {
-            args: [{ name: "req", type: "WithdrawalRequest" }],
-            docs: [],
-            label: "process_withdrawal",
-            mutates: false,
-            payable: false,
-            returnType: { displayName: ["WithdrawalResult"], type: 1 },
-            selector: "0xabcdef01"
-          },
-          {
-            args: [
-              { name: "commitment", type: "Vec<u8>" },
-              { name: "asp_provider", type: "String" }
-            ],
-            label: "generate_compliance_proof",
-            mutates: false,
-            payable: false,
-            returnType: { displayName: ["ComplianceProof"], type: 2 },
-            selector: "0xabcdef02"
-          },
-          {
-            args: [],
-            label: "get_tee_attestation_report",
-            mutates: false,
-            payable: false,
-            returnType: { displayName: ["Vec<u8>"], type: 3 },
-            selector: "0xabcdef03"
-          }
-        ]
-      },
-      storage: { struct: { fields: [] } },
-      types: []
-    };
-    const contractKey = this.contractAddress;
-    this.contract = new PinkContractPromise(
-      this.api,
-      this.registry,
-      abi,
-      contractKey,
-      contractKey
+  async generateWithdrawalProof(request) {
+    const nullifierHash = this.computeNullifierHash(
+      request.nullifier,
+      request.leafIndex
     );
-    const address = await signer.getAddress();
-    this.certificate = await signCertificate({
-      pair: {
-        address,
-        sign: async (data) => {
-          const sig = await signer.signMessage(data);
-          return hexToBytes(sig);
-        }
-      },
-      api: this.api
-    });
-  }
-  async processWithdrawal(request) {
-    if (!this.contract || !this.certificate) {
-      console.warn(
-        "PhatClient not connected to Phala, falling back to mock response"
-      );
-      return this._simulateLocalResponse("process_withdrawal", request);
-    }
-    try {
-      const encodedRequest = this.encodeWithdrawalRequest(request);
-      const { output } = await this.contract.query.processWithdrawal(
-        this.certificate.address,
-        { cert: this.certificate },
-        encodedRequest
-      );
-      if (!output || !output.isOk) {
-        throw new Error("Failed to execute contract query");
-      }
-      return this.decodeWithdrawalResponse(output.asOk.toHuman());
-    } catch (error) {
-      console.error("Phat Contract call failed:", error);
-      return {
-        success: false,
-        zkProof: new Uint8Array(),
-        teeAttestation: new Uint8Array(),
-        error: error instanceof Error ? error.message : "Unknown error"
-      };
-    }
-  }
-  async generateComplianceProof(commitment, aspProvider) {
-    if (!this.contract || !this.certificate) {
-      return this._simulateLocalResponse("generate_compliance_proof", {
-        commitment,
-        aspProvider
-      });
-    }
-    const { output } = await this.contract.query.generateComplianceProof(
-      this.certificate.address,
-      { cert: this.certificate },
-      commitment,
-      aspProvider
-    );
-    return this.decodeComplianceProof(output.asOk.toHuman());
-  }
-  async getAttestationReport() {
-    if (!this.contract || !this.certificate) {
-      return this._simulateLocalResponse("get_tee_attestation_report", {}).attestation;
-    }
-    const { output } = await this.contract.query.getTeeAttestationReport(
-      this.certificate.address,
-      { cert: this.certificate }
-    );
-    return output.asOk.toU8a();
-  }
-  async isNullifierUsed(nullifier) {
-    return false;
-  }
-  async getCommitmentRoot() {
-    return new Uint8Array(32);
-  }
-  _simulateLocalResponse(method, params) {
-    switch (method) {
-      case "process_withdrawal": {
-        const mockProof = new Uint8Array(256);
-        mockProof[0] = 1;
-        return {
-          success: true,
-          zkProof: mockProof,
-          teeAttestation: new Uint8Array(64)
-        };
-      }
-      case "generate_compliance_proof": {
-        return {
-          depositCommitment: new Uint8Array(32),
-          associationRoot: new Uint8Array(32),
-          zkProof: new Uint8Array(64),
-          aspSignature: new Uint8Array(64),
-          timestamp: Date.now()
-        };
-      }
-      case "get_tee_attestation_report":
-        return { attestation: new Uint8Array(64) };
-      default:
-        throw new Error(`Unknown method: ${method}`);
-    }
-  }
-  encodeWithdrawalRequest(req) {
-    return {
-      commitment: req.commitment,
-      nullifier: req.nullifier,
-      recipient: req.recipient,
-      amount: req.amount,
-      merkle_path: req.merklePath,
-      path_indices: req.pathIndices
-    };
-  }
-  decodeWithdrawalResponse(res) {
-    const _ = res;
+    const zkProof = this.generateMockProof(request);
+    const merkleRoot = request.merkleRoot ?? new Uint8Array(32);
     return {
       success: true,
-      zkProof: new Uint8Array(),
-      teeAttestation: new Uint8Array()
+      nullifierHash,
+      zkProof,
+      merkleRoot,
+      timestamp: Date.now()
     };
   }
-  decodeComplianceProof(res) {
-    const _ = res;
+  async generateComplianceProof(commitment, associationRoot) {
+    const proofId = keccak2562(
+      new Uint8Array([...commitment, ...associationRoot])
+    );
     return {
-      depositCommitment: new Uint8Array(),
-      associationRoot: new Uint8Array(),
-      zkProof: new Uint8Array(),
-      aspSignature: new Uint8Array(),
-      timestamp: 0
+      id: proofId,
+      associationRoot,
+      timestamp: Date.now(),
+      valid: true,
+      proof: new Uint8Array(256)
     };
+  }
+  computeNullifierHash(nullifier, leafIndex) {
+    const indexBytes = new TextEncoder().encode(leafIndex.toString());
+    const combined = new Uint8Array([...nullifier, ...indexBytes]);
+    const hash = keccak2562(combined);
+    return this.hexToBytes(hash);
+  }
+  generateMockProof(request) {
+    const proof = new Uint8Array(256);
+    proof[0] = 1;
+    const amountHex = toBeHex(request.amount, 32);
+    const amountBytes = this.hexToBytes(amountHex);
+    proof.set(amountBytes.slice(0, 32), 1);
+    proof.set(request.commitment.slice(0, 32), 33);
+    return proof;
+  }
+  hexToBytes(hex) {
+    const cleanHex = hex.startsWith("0x") ? hex.slice(2) : hex;
+    const bytes = new Uint8Array(cleanHex.length / 2);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = parseInt(cleanHex.slice(i * 2, i * 2 + 2), 16);
+    }
+    return bytes;
   }
 };
 
@@ -559,10 +428,10 @@ var PrivacyVaultSDK = class {
   provider;
   signer = null;
   vault;
-  aspRegistry;
-  phatClient;
+  _aspRegistry;
+  zkClient;
   config;
-  merkleTree;
+  _merkleTree;
   constructor(config, signer) {
     this.config = config;
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
@@ -574,13 +443,13 @@ var PrivacyVaultSDK = class {
       PRIVACY_VAULT_ABI,
       this.signer ?? this.provider
     );
-    this.aspRegistry = new ethers.Contract(
+    this._aspRegistry = new ethers.Contract(
       config.aspRegistryAddress,
       ASP_REGISTRY_ABI,
       this.provider
     );
-    this.phatClient = new PhatClient(config.phatContractAddress);
-    this.merkleTree = new MerkleTree();
+    this.zkClient = new ZKProofClient();
+    this._merkleTree = new MerkleTree();
   }
   async connect(signer) {
     this.signer = signer;
@@ -597,6 +466,7 @@ var PrivacyVaultSDK = class {
       gasLimit: DEFAULT_GAS_LIMIT
     });
     const receipt = await tx.wait();
+    let leafIndex = -1;
     const depositEvent = receipt.logs.find((log) => {
       try {
         const parsed = this.vault.interface.parseLog({
@@ -608,7 +478,6 @@ var PrivacyVaultSDK = class {
         return false;
       }
     });
-    let leafIndex = -1;
     if (depositEvent) {
       const parsed = this.vault.interface.parseLog({
         topics: depositEvent.topics,
@@ -617,7 +486,6 @@ var PrivacyVaultSDK = class {
       leafIndex = Number(parsed?.args?.leafIndex ?? -1);
     }
     note.leafIndex = leafIndex;
-    this.merkleTree.insert(bytes32ToBigInt(note.commitment));
     return {
       success: true,
       txHash: receipt.hash,
@@ -630,166 +498,72 @@ var PrivacyVaultSDK = class {
     if (!this.signer) {
       throw new Error("Signer required for withdrawals");
     }
-    const nullifierSeedBigInt = bytes32ToBigInt(note.nullifierSeed);
-    const nullifier = computeNullifier(nullifierSeedBigInt, note.leafIndex);
-    const nullifierBytes = bigIntToBytes32(nullifier);
-    const isUsed = await this.vault.isNullifierUsed(bytesToHex(nullifierBytes));
-    if (isUsed) {
-      return {
-        success: false,
-        zkProof: new Uint8Array(),
-        teeAttestation: new Uint8Array(),
-        error: "Nullifier already used"
-      };
-    }
-    const merkleProof = this.merkleTree.generateProof(note.leafIndex);
-    const root = await this.vault.getLatestRoot();
-    const teeResult = await this.phatClient.processWithdrawal({
+    const nullifierBigInt = bytes32ToBigInt(note.nullifierSeed);
+    const nullifierHashBigInt = computeNullifier(
+      nullifierBigInt,
+      note.leafIndex
+    );
+    const nullifierHash = bigIntToBytes32(nullifierHashBigInt);
+    const root = await this.getLatestRoot();
+    const zkProofResult = await this.zkClient.generateWithdrawalProof({
       commitment: note.commitment,
-      nullifier: nullifierBytes,
+      nullifier: note.nullifierSeed,
       recipient,
       amount: note.amount,
-      merklePath: merkleProof.path,
-      pathIndices: merkleProof.indices
+      leafIndex: note.leafIndex,
+      merkleRoot: root,
+      merklePath: [],
+      pathIndices: []
     });
-    if (!teeResult.success) {
-      return {
-        success: false,
-        zkProof: new Uint8Array(),
-        teeAttestation: new Uint8Array(),
-        error: teeResult.error
-      };
-    }
     const tx = await this.vault.withdraw(
-      bytesToHex(nullifierBytes),
-      root,
+      bytesToHex(nullifierHash),
+      bytesToHex(root),
       recipient,
       note.amount,
-      bytesToHex(teeResult.zkProof),
-      bytesToHex(teeResult.teeAttestation),
-      { gasLimit: DEFAULT_GAS_LIMIT * 2n }
+      zkProofResult.zkProof,
+      new Uint8Array(64),
+      { gasLimit: DEFAULT_GAS_LIMIT }
     );
     const receipt = await tx.wait();
     return {
       success: true,
       txHash: receipt.hash,
-      zkProof: teeResult.zkProof,
-      teeAttestation: teeResult.teeAttestation
+      zkProof: zkProofResult.zkProof,
+      nullifierHash,
+      merkleRoot: root,
+      timestamp: Date.now()
     };
   }
-  async withdrawWithCompliance(note, recipient, aspProvider) {
-    if (!this.signer) {
-      throw new Error("Signer required for withdrawals");
-    }
-    const isRegistered = await this.aspRegistry.isRegistered(aspProvider);
-    if (!isRegistered) {
-      return {
-        success: false,
-        zkProof: new Uint8Array(),
-        teeAttestation: new Uint8Array(),
-        error: "ASP provider not registered"
-      };
-    }
-    const nullifierSeedBigInt = bytes32ToBigInt(note.nullifierSeed);
-    const nullifier = computeNullifier(nullifierSeedBigInt, note.leafIndex);
-    const nullifierBytes = bigIntToBytes32(nullifier);
-    const merkleProof = this.merkleTree.generateProof(note.leafIndex);
+  async getLatestRoot() {
     const root = await this.vault.getLatestRoot();
-    const complianceProof = await this.phatClient.generateComplianceProof(
-      note.commitment,
-      aspProvider
-    );
-    const teeResult = await this.phatClient.processWithdrawal({
-      commitment: note.commitment,
-      nullifier: nullifierBytes,
-      recipient,
-      amount: note.amount,
-      merklePath: merkleProof.path,
-      pathIndices: merkleProof.indices
-    });
-    if (!teeResult.success) {
-      return {
-        success: false,
-        zkProof: new Uint8Array(),
-        teeAttestation: new Uint8Array(),
-        error: teeResult.error
-      };
-    }
-    const associationProofBytes = this.encodeAssociationProof(complianceProof);
-    const tx = await this.vault.withdrawWithCompliance(
-      bytesToHex(nullifierBytes),
-      root,
-      recipient,
-      note.amount,
-      bytesToHex(teeResult.zkProof),
-      bytesToHex(associationProofBytes),
-      aspProvider,
-      { gasLimit: DEFAULT_GAS_LIMIT * 2n }
-    );
-    const receipt = await tx.wait();
-    return {
-      success: true,
-      txHash: receipt.hash,
-      zkProof: teeResult.zkProof,
-      teeAttestation: teeResult.teeAttestation
-    };
+    return hexToBytes(root);
+  }
+  async getNextLeafIndex() {
+    const index = await this.vault.getNextLeafIndex();
+    return Number(index);
+  }
+  async isNullifierUsed(nullifier) {
+    return await this.vault.isNullifierUsed(bytesToHex(nullifier));
+  }
+  async isKnownRoot(root) {
+    return await this.vault.isKnownRoot(bytesToHex(root));
   }
   async getVaultStats() {
-    const [totalDeposits, totalWithdrawals, nextLeafIndex, latestRoot] = await Promise.all([
-      this.provider.getBalance(this.config.vaultAddress),
-      0n,
+    const [nextLeafIndex, latestRoot] = await Promise.all([
       this.vault.getNextLeafIndex(),
       this.vault.getLatestRoot()
     ]);
     return {
-      totalDeposits,
-      totalWithdrawals,
+      totalDeposits: 0n,
+      totalWithdrawals: 0n,
       nextLeafIndex: Number(nextLeafIndex),
       latestRoot: hexToBytes(latestRoot)
     };
   }
-  async isRootKnown(root) {
-    return this.vault.isKnownRoot(bytesToHex(root));
-  }
-  async isNullifierUsed(nullifier) {
-    return this.vault.isNullifierUsed(bytesToHex(nullifier));
-  }
-  async getActiveASPs() {
-    return this.aspRegistry.getActiveProviders();
-  }
-  async getHighReputationASPs(minScore) {
-    return this.aspRegistry.getHighReputationProviders(minScore);
-  }
-  async getUserDeposits(address) {
-    const commitments = await this.vault.getUserDeposits(address);
-    return commitments.map((c) => hexToBytes(c));
-  }
-  syncMerkleTree(leaves) {
-    this.merkleTree = new MerkleTree();
-    for (const leaf of leaves) {
-      this.merkleTree.insert(leaf);
-    }
-  }
-  getMerkleProof(index) {
-    return this.merkleTree.generateProof(index);
-  }
-  encodeAssociationProof(proof) {
-    const result = new Uint8Array(64 + proof.zkProof.length);
-    const depositRoot = this.merkleTree.generateProof(0).root;
-    result.set(depositRoot, 0);
-    result.set(proof.associationRoot, 32);
-    result.set(proof.zkProof, 64);
-    return result;
+  getConfig() {
+    return this.config;
   }
 };
-function createVaultSDK(config) {
-  return new PrivacyVaultSDK(config);
-}
-async function createVaultSDKWithSigner(config, privateKey) {
-  const provider = new ethers.JsonRpcProvider(config.rpcUrl);
-  const signer = new ethers.Wallet(privateKey, provider);
-  return new PrivacyVaultSDK(config, signer);
-}
 export {
   ASP_REGISTRY_ABI,
   CHAIN_CONFIG,
@@ -802,17 +576,15 @@ export {
   POSEIDON_CONSTANTS,
   PRIVACY_VAULT_ABI,
   PROOF_EXPIRY_MS,
-  PhatClient,
   PrivacyVaultSDK,
   ZERO_BYTES32,
+  ZKProofClient,
   ZK_VERIFIER_ABI,
   bigIntToBytes32,
   bytes32ToBigInt,
   bytesToHex,
   computeCommitment,
   computeNullifier,
-  createVaultSDK,
-  createVaultSDKWithSigner,
   decryptNote,
   deserializeNote,
   encryptNote,

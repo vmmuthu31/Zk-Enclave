@@ -1,5 +1,5 @@
-export * from "./vault.ts";
-export * from "./crypto.ts";
-export * from "./types.ts";
-export * from "./constants.ts";
-export * from "./phat-client.ts";
+export * from "./vault";
+export * from "./crypto";
+export * from "./types";
+export * from "./constants";
+export { ZKProofClient } from "./zk-client";
