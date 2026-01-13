@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.23;
 
 library MerkleTreeLib {
     uint256 constant ROOT_HISTORY_SIZE = 30;
@@ -64,7 +64,7 @@ library MerkleTreeLib {
     }
 
     function hashPair(bytes32 left, bytes32 right) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(left, right));
+        return sha256(abi.encodePacked(left, right));
     }
 
     function zeros(uint256 level) internal pure returns (bytes32) {

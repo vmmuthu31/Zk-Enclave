@@ -22,6 +22,11 @@ export const CONTRACT_ADDRESSES = {
       zkVerifier: "0x68491614a84C0410E9Fc0CB59Fc60A4F9188687c",
       aspRegistry: "0xB041Cff58FB866c7f4326e0767c97B93434aBa9E",
     },
+    horizenSepolia: {
+      vault: "0x68F19280d3030eaE36B8Da42621B66e92a8AEA32",
+      zkVerifier: "0x68491614a84C0410E9Fc0CB59Fc60A4F9188687c",
+      aspRegistry: "0xB041Cff58FB866c7f4326e0767c97B93434aBa9E",
+    },
   },
   phala: {
     mainnet: {
@@ -48,6 +53,11 @@ export const CHAIN_CONFIG = {
     name: "Phala L2",
     rpcUrl: "https://rpc.phala.network",
     explorer: "https://explorer.phala.network",
+  },
+  845320009: {
+    name: "Horizen Sepolia Testnet",
+    rpcUrl: "https://horizen-rpc-testnet.appchain.base.org",
+    explorer: "https://explorer-horizen-testnet.appchain.base.org",
   },
 } as const;
 

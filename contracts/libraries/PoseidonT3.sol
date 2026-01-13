@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.23;
 
 library PoseidonT3 {
     uint256 constant F = 21888242871839275222246405745257275088548364400416034343698204186575808495617;

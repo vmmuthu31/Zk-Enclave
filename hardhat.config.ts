@@ -8,7 +8,7 @@ const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: "0.8.24",
+    version: "0.8.23",
     settings: {
       optimizer: {
         enabled: true,
@@ -29,6 +29,14 @@ const config: HardhatUserConfig = {
         "https://forno.celo-sepolia.celo-testnet.org",
       accounts: [PRIVATE_KEY],
       chainId: 11142220,
+    },
+    horizenSepolia: {
+      type: "http",
+      url:
+        process.env.HORIZEN_RPC_URL ||
+        "https://horizen-rpc-testnet.appchain.base.org",
+      accounts: [PRIVATE_KEY],
+      chainId: 845320009,
     },
   },
   paths: {
