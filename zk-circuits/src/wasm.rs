@@ -14,11 +14,7 @@ use rand::rngs::OsRng;
 use sha2::{Sha256, Digest};
 use std::sync::OnceLock;
 
-mod withdrawal_circuit;
-mod poseidon;
-mod merkle;
-
-use withdrawal_circuit::{WithdrawalCircuit, WithdrawalWitness, WithdrawalPublicInputs, MERKLE_DEPTH};
+use crate::withdrawal_circuit::{WithdrawalCircuit, WithdrawalWitness, WithdrawalPublicInputs, MERKLE_DEPTH};
 
 static PARAMS: OnceLock<ParamsKZG<Bn256>> = OnceLock::new();
 
