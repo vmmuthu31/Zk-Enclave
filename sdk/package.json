@@ -1,5 +1,5 @@
 {
-  "name": "@zkenclave/sdk",
+  "name": "zkenclave-sdk",
   "version": "0.1.0",
   "description": "TypeScript SDK for privacy-preserving vault withdrawals with ZK proofs",
   "main": "dist/index.js",

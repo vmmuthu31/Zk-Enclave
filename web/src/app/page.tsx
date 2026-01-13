@@ -1,22 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { BrowserProvider, parseEther, formatEther } from "ethers";
-import { keccak256, randomBytes } from "ethers";
+import {
+  BrowserProvider,
+  parseEther,
+  formatEther,
+  keccak256,
+  randomBytes,
+} from "ethers";
+import { PRIVACY_VAULT_ABI, CHAIN_CONFIG } from "zkenclave-sdk";
 
 const PRIVACY_VAULT_ADDRESS = "0x68F19280d3030eaE36B8Da42621B66e92a8AEA32";
 const CHAIN_ID = 845320009;
-const RPC_URL = "https://horizen-rpc-testnet.appchain.base.org";
-
-const PRIVACY_VAULT_ABI = [
-  "function deposit(bytes32 commitment) external payable",
-  "function withdraw(bytes32 nullifierHash, bytes32 root, address recipient, uint256 amount, bytes calldata zkProof, bytes calldata teeAttestation) external",
-  "function isKnownRoot(bytes32 root) external view returns (bool)",
-  "function getLatestRoot() external view returns (bytes32)",
-  "function getNextLeafIndex() external view returns (uint256)",
-  "function isNullifierUsed(bytes32 nullifier) external view returns (bool)",
-  "event Deposit(bytes32 indexed commitment, uint256 leafIndex, uint256 amount, uint256 timestamp)",
-];
+const RPC_URL =
+  CHAIN_CONFIG[845320009]?.rpcUrl ||
+  "https://horizen-rpc-testnet.appchain.base.org";
 
 interface DepositNote {
   secret: string;
@@ -61,22 +59,7 @@ export default function Home() {
       try {
         const provider = new BrowserProvider(window.ethereum);
         await provider.send("eth_requestAccounts", []);
-
-        const network = await provider.getNetwork();
-        if (Number(network.chainId) !== CHAIN_ID) {
-          await window.ethereum.request({
-            method: "wallet_addEthereumChain",
-            params: [
-              {
-                chainId: `0x${CHAIN_ID.toString(16)}`,
-                chainName: "Horizen Sepolia Testnet",
-                nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-                rpcUrls: [RPC_URL],
-              },
-            ],
-          });
-        }
-
+        await switchToHorizenSepolia();
         await checkConnection();
       } catch (error) {
         console.error("Connection error:", error);
@@ -84,6 +67,34 @@ export default function Home() {
       }
     } else {
       setStatus("Please install MetaMask");
+    }
+  }
+
+  async function switchToHorizenSepolia() {
+    if (!window.ethereum) return;
+
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: `0x${CHAIN_ID.toString(16)}` }],
+      });
+    } catch (switchError: unknown) {
+      if ((switchError as { code: number }).code === 4902) {
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [
+            {
+              chainId: `0x${CHAIN_ID.toString(16)}`,
+              chainName: "Horizen Sepolia Testnet",
+              nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+              rpcUrls: [RPC_URL],
+              blockExplorerUrls: [
+                "https://explorer-horizen-testnet.appchain.base.org",
+              ],
+            },
+          ],
+        });
+      }
     }
   }
 
@@ -129,11 +140,9 @@ export default function Home() {
 
     try {
       const { ethers } = await import("ethers");
-      const provider = new BrowserProvider(window.ethereum);
+      const provider = new BrowserProvider(window.ethereum!);
       const signer = await provider.getSigner();
-
       const note = generateNote(depositAmount);
-
       const vault = new ethers.Contract(
         PRIVACY_VAULT_ADDRESS,
         PRIVACY_VAULT_ABI,
@@ -187,11 +196,16 @@ export default function Home() {
 
     try {
       const { ethers } = await import("ethers");
-      const provider = new BrowserProvider(window.ethereum);
+      const provider = new BrowserProvider(window.ethereum!);
       const signer = await provider.getSigner();
-
       const note: DepositNote = JSON.parse(withdrawNote);
 
+      const readProvider = new ethers.JsonRpcProvider(RPC_URL);
+      const readVault = new ethers.Contract(
+        PRIVACY_VAULT_ADDRESS,
+        PRIVACY_VAULT_ABI,
+        readProvider
+      );
       const vault = new ethers.Contract(
         PRIVACY_VAULT_ADDRESS,
         PRIVACY_VAULT_ABI,
@@ -202,7 +216,8 @@ export default function Home() {
         new TextEncoder().encode(note.nullifier + note.leafIndex)
       );
 
-      const root = await vault.getLatestRoot();
+      setStatus("Fetching latest root...");
+      const root = await readVault.getLatestRoot();
 
       const zkProof = new Uint8Array(256);
       zkProof[0] = 0x01;
@@ -241,7 +256,16 @@ export default function Home() {
             Privacy Vault
           </h1>
           <p className="text-gray-400 text-lg">
-            Zero-Knowledge Private Deposits & Withdrawals
+            Zero-Knowledge Private Deposits &amp; Withdrawals
+          </p>
+          <p className="text-xs text-gray-500 mt-2">
+            Powered by{" "}
+            <a
+              href="https://www.npmjs.com/package/zkenclave-sdk"
+              className="text-purple-400 hover:underline"
+            >
+              zkenclave-sdk
+            </a>
           </p>
         </header>
 
@@ -306,7 +330,7 @@ export default function Home() {
                       onChange={(e) => setDepositAmount(e.target.value)}
                       className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 focus:outline-none focus:border-purple-500"
                       step="0.01"
-                      min="0.01"
+                      min="0.001"
                     />
                   </div>
                   <button
@@ -400,6 +424,12 @@ export default function Home() {
 
         <footer className="mt-16 text-center text-gray-500 text-sm">
           <p>Privacy Vault • Zero-Knowledge Proofs • Horizen Sepolia</p>
+          <p className="mt-2">
+            SDK:{" "}
+            <code className="bg-white/10 px-2 py-1 rounded">
+              zkenclave-sdk@0.1.0
+            </code>
+          </p>
         </footer>
       </div>
     </div>

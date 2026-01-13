@@ -3,36 +3,33 @@ import {
   PRIVACY_VAULT_ABI,
   ASP_REGISTRY_ABI,
   DEFAULT_GAS_LIMIT,
-} from "./constants.ts";
+} from "./constants";
 import {
   generateDepositNote,
   computeNullifier,
-  bytes32ToBigInt,
   bytesToHex,
   hexToBytes,
+  bytes32ToBigInt,
   bigIntToBytes32,
   MerkleTree,
-} from "./crypto.ts";
+} from "./crypto";
 import type {
   DepositNote,
   DepositResult,
   WithdrawalResult,
   VaultConfig,
   VaultStats,
-  ComplianceProof,
-  MerkleProof,
-} from "./types.ts";
-import { PhatClient } from "./phat-client.ts";
+} from "./types";
+import { ZKProofClient } from "./zk-client";
 
 export class PrivacyVaultSDK {
   private provider: ethers.Provider;
   private signer: ethers.Signer | null = null;
   private vault: ethers.Contract;
-
-  private aspRegistry: ethers.Contract;
-  private phatClient: PhatClient;
+  private _aspRegistry: ethers.Contract;
+  private zkClient: ZKProofClient;
   private config: VaultConfig;
-  private merkleTree: MerkleTree;
+  private _merkleTree: MerkleTree;
 
   constructor(config: VaultConfig, signer?: ethers.Signer) {
     this.config = config;
@@ -48,14 +45,14 @@ export class PrivacyVaultSDK {
       this.signer ?? this.provider
     );
 
-    this.aspRegistry = new ethers.Contract(
+    this._aspRegistry = new ethers.Contract(
       config.aspRegistryAddress,
       ASP_REGISTRY_ABI,
       this.provider
     );
 
-    this.phatClient = new PhatClient(config.phatContractAddress);
-    this.merkleTree = new MerkleTree();
+    this.zkClient = new ZKProofClient();
+    this._merkleTree = new MerkleTree();
   }
 
   async connect(signer: ethers.Signer): Promise<void> {
@@ -78,6 +75,7 @@ export class PrivacyVaultSDK {
 
     const receipt = await tx.wait();
 
+    let leafIndex = -1;
     const depositEvent = receipt.logs.find((log: ethers.Log) => {
       try {
         const parsed = this.vault.interface.parseLog({
@@ -90,7 +88,6 @@ export class PrivacyVaultSDK {
       }
     });
 
-    let leafIndex = -1;
     if (depositEvent) {
       const parsed = this.vault.interface.parseLog({
         topics: depositEvent.topics as string[],
@@ -100,8 +97,6 @@ export class PrivacyVaultSDK {
     }
 
     note.leafIndex = leafIndex;
-
-    this.merkleTree.insert(bytes32ToBigInt(note.commitment));
 
     return {
       success: true,
@@ -120,49 +115,33 @@ export class PrivacyVaultSDK {
       throw new Error("Signer required for withdrawals");
     }
 
-    const nullifierSeedBigInt = bytes32ToBigInt(note.nullifierSeed);
-    const nullifier = computeNullifier(nullifierSeedBigInt, note.leafIndex);
-    const nullifierBytes = bigIntToBytes32(nullifier);
+    const nullifierBigInt = bytes32ToBigInt(note.nullifierSeed);
+    const nullifierHashBigInt = computeNullifier(
+      nullifierBigInt,
+      note.leafIndex
+    );
+    const nullifierHash = bigIntToBytes32(nullifierHashBigInt);
+    const root = await this.getLatestRoot();
 
-    const isUsed = await this.vault.isNullifierUsed(bytesToHex(nullifierBytes));
-    if (isUsed) {
-      return {
-        success: false,
-        zkProof: new Uint8Array(),
-        teeAttestation: new Uint8Array(),
-        error: "Nullifier already used",
-      };
-    }
-
-    const merkleProof = this.merkleTree.generateProof(note.leafIndex);
-    const root = await this.vault.getLatestRoot();
-
-    const teeResult = await this.phatClient.processWithdrawal({
+    const zkProofResult = await this.zkClient.generateWithdrawalProof({
       commitment: note.commitment,
-      nullifier: nullifierBytes,
-      recipient: recipient,
+      nullifier: note.nullifierSeed,
+      recipient,
       amount: note.amount,
-      merklePath: merkleProof.path,
-      pathIndices: merkleProof.indices,
+      leafIndex: note.leafIndex,
+      merkleRoot: root,
+      merklePath: [],
+      pathIndices: [],
     });
 
-    if (!teeResult.success) {
-      return {
-        success: false,
-        zkProof: new Uint8Array(),
-        teeAttestation: new Uint8Array(),
-        error: teeResult.error,
-      };
-    }
-
     const tx = await this.vault.withdraw(
-      bytesToHex(nullifierBytes),
-      root,
+      bytesToHex(nullifierHash),
+      bytesToHex(root),
       recipient,
       note.amount,
-      bytesToHex(teeResult.zkProof),
-      bytesToHex(teeResult.teeAttestation),
-      { gasLimit: DEFAULT_GAS_LIMIT * 2n }
+      zkProofResult.zkProof,
+      new Uint8Array(64),
+      { gasLimit: DEFAULT_GAS_LIMIT }
     );
 
     const receipt = await tx.wait();
@@ -170,153 +149,46 @@ export class PrivacyVaultSDK {
     return {
       success: true,
       txHash: receipt.hash,
-      zkProof: teeResult.zkProof,
-      teeAttestation: teeResult.teeAttestation,
+      zkProof: zkProofResult.zkProof,
+      nullifierHash,
+      merkleRoot: root,
+      timestamp: Date.now(),
     };
   }
 
-  async withdrawWithCompliance(
-    note: DepositNote,
-    recipient: string,
-    aspProvider: string
-  ): Promise<WithdrawalResult> {
-    if (!this.signer) {
-      throw new Error("Signer required for withdrawals");
-    }
-
-    const isRegistered = await this.aspRegistry.isRegistered(aspProvider);
-    if (!isRegistered) {
-      return {
-        success: false,
-        zkProof: new Uint8Array(),
-        teeAttestation: new Uint8Array(),
-        error: "ASP provider not registered",
-      };
-    }
-
-    const nullifierSeedBigInt = bytes32ToBigInt(note.nullifierSeed);
-    const nullifier = computeNullifier(nullifierSeedBigInt, note.leafIndex);
-    const nullifierBytes = bigIntToBytes32(nullifier);
-
-    const merkleProof = this.merkleTree.generateProof(note.leafIndex);
+  async getLatestRoot(): Promise<Uint8Array> {
     const root = await this.vault.getLatestRoot();
+    return hexToBytes(root);
+  }
 
-    const complianceProof = await this.phatClient.generateComplianceProof(
-      note.commitment,
-      aspProvider
-    );
+  async getNextLeafIndex(): Promise<number> {
+    const index = await this.vault.getNextLeafIndex();
+    return Number(index);
+  }
 
-    const teeResult = await this.phatClient.processWithdrawal({
-      commitment: note.commitment,
-      nullifier: nullifierBytes,
-      recipient: recipient,
-      amount: note.amount,
-      merklePath: merkleProof.path,
-      pathIndices: merkleProof.indices,
-    });
+  async isNullifierUsed(nullifier: Uint8Array): Promise<boolean> {
+    return await this.vault.isNullifierUsed(bytesToHex(nullifier));
+  }
 
-    if (!teeResult.success) {
-      return {
-        success: false,
-        zkProof: new Uint8Array(),
-        teeAttestation: new Uint8Array(),
-        error: teeResult.error,
-      };
-    }
-
-    const associationProofBytes = this.encodeAssociationProof(complianceProof);
-
-    const tx = await this.vault.withdrawWithCompliance(
-      bytesToHex(nullifierBytes),
-      root,
-      recipient,
-      note.amount,
-      bytesToHex(teeResult.zkProof),
-      bytesToHex(associationProofBytes),
-      aspProvider,
-      { gasLimit: DEFAULT_GAS_LIMIT * 2n }
-    );
-
-    const receipt = await tx.wait();
-
-    return {
-      success: true,
-      txHash: receipt.hash,
-      zkProof: teeResult.zkProof,
-      teeAttestation: teeResult.teeAttestation,
-    };
+  async isKnownRoot(root: Uint8Array): Promise<boolean> {
+    return await this.vault.isKnownRoot(bytesToHex(root));
   }
 
   async getVaultStats(): Promise<VaultStats> {
-    const [totalDeposits, totalWithdrawals, nextLeafIndex, latestRoot] =
-      await Promise.all([
-        this.provider.getBalance(this.config.vaultAddress),
-        0n,
-        this.vault.getNextLeafIndex(),
-        this.vault.getLatestRoot(),
-      ]);
+    const [nextLeafIndex, latestRoot] = await Promise.all([
+      this.vault.getNextLeafIndex(),
+      this.vault.getLatestRoot(),
+    ]);
 
     return {
-      totalDeposits,
-      totalWithdrawals,
+      totalDeposits: 0n,
+      totalWithdrawals: 0n,
       nextLeafIndex: Number(nextLeafIndex),
       latestRoot: hexToBytes(latestRoot),
     };
   }
 
-  async isRootKnown(root: Uint8Array): Promise<boolean> {
-    return this.vault.isKnownRoot(bytesToHex(root));
+  getConfig(): VaultConfig {
+    return this.config;
   }
-
-  async isNullifierUsed(nullifier: Uint8Array): Promise<boolean> {
-    return this.vault.isNullifierUsed(bytesToHex(nullifier));
-  }
-
-  async getActiveASPs(): Promise<string[]> {
-    return this.aspRegistry.getActiveProviders();
-  }
-
-  async getHighReputationASPs(minScore: number): Promise<string[]> {
-    return this.aspRegistry.getHighReputationProviders(minScore);
-  }
-
-  async getUserDeposits(address: string): Promise<Uint8Array[]> {
-    const commitments = await this.vault.getUserDeposits(address);
-    return commitments.map((c: string) => hexToBytes(c));
-  }
-
-  syncMerkleTree(leaves: bigint[]): void {
-    this.merkleTree = new MerkleTree();
-    for (const leaf of leaves) {
-      this.merkleTree.insert(leaf);
-    }
-  }
-
-  getMerkleProof(index: number): MerkleProof {
-    return this.merkleTree.generateProof(index);
-  }
-
-  private encodeAssociationProof(proof: ComplianceProof): Uint8Array {
-    const result = new Uint8Array(64 + proof.zkProof.length);
-
-    const depositRoot = this.merkleTree.generateProof(0).root;
-    result.set(depositRoot, 0);
-    result.set(proof.associationRoot, 32);
-    result.set(proof.zkProof, 64);
-
-    return result;
-  }
-}
-
-export function createVaultSDK(config: VaultConfig): PrivacyVaultSDK {
-  return new PrivacyVaultSDK(config);
-}
-
-export async function createVaultSDKWithSigner(
-  config: VaultConfig,
-  privateKey: string
-): Promise<PrivacyVaultSDK> {
-  const provider = new ethers.JsonRpcProvider(config.rpcUrl);
-  const signer = new ethers.Wallet(privateKey, provider);
-  return new PrivacyVaultSDK(config, signer);
 }
