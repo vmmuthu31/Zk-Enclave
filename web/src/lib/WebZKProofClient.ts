@@ -6,15 +6,20 @@ import {
 } from "zkenclave-sdk";
 import { generateProof, type ProofRequest } from "./zkproof";
 
+interface ExtendedWithdrawalRequest extends WithdrawalRequest {
+  secret?: Uint8Array;
+}
+
 export class WebZKProofClient extends ZKProofClient {
   async generateWithdrawalProof(
     request: WithdrawalRequest
   ): Promise<WithdrawalResult> {
     console.log("Generating real ZK proof in browser...");
 
-    // Convert SDK types to WASM types
+    const fullRequest = request as ExtendedWithdrawalRequest;
+
     const wasmRequest: ProofRequest = {
-      secret: Array.from((request as any).secret || new Uint8Array(32)), // Cast for runtime compatibility
+      secret: Array.from(fullRequest.secret || new Uint8Array(32)),
       nullifier_seed: Array.from(request.nullifier),
       amount: Number(request.amount),
       leaf_index: request.leafIndex,
@@ -41,7 +46,6 @@ export class WebZKProofClient extends ZKProofClient {
     };
   }
 
-  // Override to do nothing or implement compliance if needed
   async generateComplianceProof(
     commitment: Uint8Array,
     associationRoot: Uint8Array
@@ -50,7 +54,7 @@ export class WebZKProofClient extends ZKProofClient {
   }
 
   isWasmReady(): boolean {
-    return true; // We use the global loader
+    return true;
   }
 
   private addressToBytesWeb(address: string): number[] {

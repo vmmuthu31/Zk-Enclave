@@ -39,8 +39,6 @@ function saveNotes(notes: UINote[]) {
 
 import { WebZKProofClient } from "../lib/WebZKProofClient";
 
-// ...
-
 export default function Home() {
   const [sdk, setSdk] = useState<PrivacyVaultSDK | null>(null);
   const [connected, setConnected] = useState(false);
@@ -84,7 +82,6 @@ export default function Home() {
           const bal = await provider.getBalance(accounts[0].address);
           setBalance(formatEther(bal));
           const signer = await provider.getSigner();
-          // Use WebZKProofClient for WASM proofs
           const zkClient = new WebZKProofClient();
           const newSdk = new PrivacyVaultSDK(VAULT_CONFIG, signer, zkClient);
           setSdk(newSdk);
