@@ -69,9 +69,9 @@ export default function Home() {
 
   const loadVaultStats = useCallback(async () => {
     try {
-      const tempClient = new WebZKProofClient();
-      const tempSdk = new PrivacyVaultSDK(VAULT_CONFIG, undefined, tempClient);
-      const stats = await tempSdk.getVaultStats();
+      const Client = new WebZKProofClient();
+      const sdk = new PrivacyVaultSDK(VAULT_CONFIG, undefined, Client);
+      const stats = await sdk.getVaultStats();
       setVaultStats({
         deposits: stats.nextLeafIndex,
         root: bytesToHex(stats.latestRoot).slice(0, 16) + "…",
