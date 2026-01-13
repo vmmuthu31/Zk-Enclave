@@ -2,13 +2,17 @@ use wasm_bindgen::prelude::*;
 use serde::{Serialize, Deserialize};
 use halo2_proofs::{
     halo2curves::bn256::{Bn256, Fr, G1Affine},
-    plonk::{keygen_pk, keygen_vk, create_proof, verify_proof, Circuit},
-    poly::kzg::{
-        commitment::{KZGCommitmentScheme, ParamsKZG},
-        multiopen::{ProverSHPLONK, VerifierSHPLONK},
-        strategy::SingleStrategy,
+    plonk::{keygen_pk, keygen_vk, create_proof, verify_proof, Circuit, ProvingKey},
+    poly::{
+        commitment::Params,
+        kzg::{
+            commitment::{KZGCommitmentScheme, ParamsKZG},
+            multiopen::{ProverSHPLONK, VerifierSHPLONK},
+            strategy::SingleStrategy,
+        },
     },
     transcript::{Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer},
+    SerdeFormat,
 };
 use rand::rngs::OsRng;
 use sha2::{Sha256, Digest};
@@ -17,8 +21,12 @@ use std::sync::OnceLock;
 use crate::withdrawal_circuit::{WithdrawalCircuit, WithdrawalWitness, WithdrawalPublicInputs, MERKLE_DEPTH};
 
 static PARAMS: OnceLock<ParamsKZG<Bn256>> = OnceLock::new();
+static PK: OnceLock<ProvingKey<G1Affine>> = OnceLock::new();
 
-const K: u32 = 12;
+const PARAMS_BYTES: &[u8] = include_bytes!("params.bin");
+const PK_BYTES: &[u8] = include_bytes!("withdrawal_pk.bin");
+
+const K: u32 = 10;
 
 #[wasm_bindgen(start)]
 pub fn init() {
@@ -28,7 +36,16 @@ pub fn init() {
 
 fn get_params() -> &'static ParamsKZG<Bn256> {
     PARAMS.get_or_init(|| {
-        ParamsKZG::<Bn256>::setup(K, OsRng)
+        ParamsKZG::<Bn256>::read(&mut &PARAMS_BYTES[..]).expect("Failed to read params")
+    })
+}
+
+fn get_pk() -> &'static ProvingKey<G1Affine> {
+    PK.get_or_init(|| {
+        ProvingKey::<G1Affine>::read::<_, WithdrawalCircuit<Fr>>(
+            &mut &PK_BYTES[..],
+            SerdeFormat::RawBytes
+        ).expect("Failed to read PK")
     })
 }
 
@@ -108,7 +125,7 @@ pub fn generate_withdrawal_proof(request_json: &str) -> String {
 
     match generate_real_proof(circuit) {
         Ok(proof_bytes) => {
-            serde_json::to_string(&ProofResult {
+             serde_json::to_string(&ProofResult {
                 success: true,
                 proof: proof_bytes,
                 nullifier_hash: nullifier_hash.to_vec(),
@@ -126,20 +143,13 @@ pub fn generate_withdrawal_proof(request_json: &str) -> String {
 
 fn generate_real_proof(circuit: WithdrawalCircuit<Fr>) -> Result<Vec<u8>, String> {
     let params = get_params();
-    
-    let empty_circuit = WithdrawalCircuit::<Fr>::default();
-    
-    let vk = keygen_vk(params, &empty_circuit)
-        .map_err(|e| format!("keygen_vk failed: {:?}", e))?;
-    
-    let pk = keygen_pk(params, vk.clone(), &empty_circuit)
-        .map_err(|e| format!("keygen_pk failed: {:?}", e))?;
+    let pk = get_pk();
 
     let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
     
     create_proof::<KZGCommitmentScheme<Bn256>, ProverSHPLONK<'_, Bn256>, _, _, _, _>(
         params,
-        &pk,
+        pk,
         &[circuit],
         &[&[]],
         OsRng,

@@ -120,7 +120,8 @@ export class PrivacyVaultSDK {
 
   async withdraw(
     note: DepositNote,
-    recipient: string
+    recipient: string,
+    complianceProof?: Uint8Array
   ): Promise<WithdrawalResult> {
     if (!this.signer) {
       throw new Error("Signer required for withdrawals");
@@ -152,7 +153,7 @@ export class PrivacyVaultSDK {
       recipient,
       note.amount,
       zkProofResult.zkProof,
-      new Uint8Array(64),
+      complianceProof || new Uint8Array(64),
       { gasLimit: DEFAULT_GAS_LIMIT }
     );
 
