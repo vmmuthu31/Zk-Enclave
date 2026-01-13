@@ -32,7 +32,11 @@ export class PrivacyVaultSDK {
   private config: VaultConfig;
   private _merkleTree: MerkleTree;
 
-  constructor(config: VaultConfig, signer?: ethers.Signer) {
+  constructor(
+    config: VaultConfig,
+    signer?: ethers.Signer,
+    zkClient?: ZKProofClient
+  ) {
     this.config = config;
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
 
@@ -58,7 +62,7 @@ export class PrivacyVaultSDK {
       this.provider
     );
 
-    this.zkClient = new ZKProofClient();
+    this.zkClient = zkClient || new ZKProofClient();
     this._merkleTree = new MerkleTree();
   }
 
@@ -139,6 +143,7 @@ export class PrivacyVaultSDK {
       merkleRoot: root,
       merklePath: [],
       pathIndices: [],
+      secret: note.secret,
     });
 
     const tx = await this.vault.withdraw(

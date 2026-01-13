@@ -1,0 +1,20 @@
+{
+  "name": "zkenclave-circuits",
+  "type": "module",
+  "collaborators": [
+    "zkenclave-team"
+  ],
+  "description": "Native Halo2 ZK circuits for privacy-preserving withdrawals",
+  "version": "0.1.0",
+  "license": "MIT",
+  "files": [
+    "zkenclave_circuits_bg.wasm",
+    "zkenclave_circuits.js",
+    "zkenclave_circuits.d.ts"
+  ],
+  "main": "zkenclave_circuits.js",
+  "types": "zkenclave_circuits.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

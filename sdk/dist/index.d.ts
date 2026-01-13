@@ -17,6 +17,7 @@ interface WithdrawalRequest {
     merkleRoot?: Uint8Array;
     merklePath: Uint8Array[];
     pathIndices: boolean[];
+    secret?: Uint8Array;
 }
 interface WithdrawalResult {
     success: boolean;
@@ -81,6 +82,26 @@ interface BatchWithdrawal {
     status: ProofStatus;
 }
 
+interface ZKProofClientConfig {
+    wasmPath?: string;
+    useRealProofs?: boolean;
+}
+declare class ZKProofClient {
+    private config;
+    private wasmReady;
+    constructor(config?: ZKProofClientConfig);
+    private loadWasm;
+    generateWithdrawalProof(request: WithdrawalRequest): Promise<WithdrawalResult>;
+    private generateRealProof;
+    private generateFallbackProof;
+    generateComplianceProof(commitment: Uint8Array, associationRoot: Uint8Array): Promise<ComplianceProof>;
+    verifyProof(proofResult: WithdrawalResult): Promise<boolean>;
+    isWasmReady(): boolean;
+    private computeNullifierHash;
+    private addressToBytes;
+    private hexToBytes;
+}
+
 declare class PrivacyVaultSDK {
     private provider;
     private signer;
@@ -90,7 +111,7 @@ declare class PrivacyVaultSDK {
     private zkClient;
     private config;
     private _merkleTree;
-    constructor(config: VaultConfig, signer?: ethers.Signer);
+    constructor(config: VaultConfig, signer?: ethers.Signer, zkClient?: ZKProofClient);
     connect(signer: ethers.Signer): Promise<void>;
     deposit(amount: bigint): Promise<DepositResult>;
     withdraw(note: DepositNote, recipient: string): Promise<WithdrawalResult>;
@@ -193,18 +214,5 @@ declare const ZK_VERIFIER_ABI: readonly ["function verifyProof(bytes calldata pr
 declare const ASP_REGISTRY_ABI: readonly ["function isRegistered(address provider) external view returns (bool)", "function getProviderRoot(address provider) external view returns (bytes32)", "function getActiveProviders() external view returns (address[])", "function getHighReputationProviders(uint256 minScore) external view returns (address[])"];
 declare const ZERO_BYTES32: Uint8Array<ArrayBuffer>;
 declare function getZeroNode(level: number): Uint8Array;
-
-interface ZKProofClientConfig {
-    circuitPath?: string;
-}
-declare class ZKProofClient {
-    private config;
-    constructor(config?: ZKProofClientConfig);
-    generateWithdrawalProof(request: WithdrawalRequest): Promise<WithdrawalResult>;
-    generateComplianceProof(commitment: Uint8Array, associationRoot: Uint8Array): Promise<ComplianceProof>;
-    private computeNullifierHash;
-    private generateMockProof;
-    private hexToBytes;
-}
 
 export { type ASPProvider, ASP_REGISTRY_ABI, type BatchWithdrawal, CHAIN_CONFIG, CONTRACT_ADDRESSES, type ComplianceProof, DEFAULT_BATCH_SIZE, DEFAULT_GAS_LIMIT, type DepositNote, type DepositResult, FIELD_SIZE, MERKLE_TREE_DEPTH, type MerkleProof, MerkleTree, POSEIDON_CONSTANTS, PRIVACY_VAULT_ABI, PROOF_EXPIRY_MS, PrivacyVaultSDK, type ProofStatus, type TEEAttestation, type VaultConfig, type VaultStats, type WithdrawalRequest, type WithdrawalResult, ZERO_BYTES32, ZKProofClient, ZK_VERIFIER_ABI, bigIntToBytes32, bytes32ToBigInt, bytesToHex, computeCommitment, computeNullifier, decryptNote, deserializeNote, encryptNote, generateDepositNote, generateRandomBytes, getZeroNode, hexToBytes, poseidonHash, serializeNote };

@@ -2,12 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { BrowserProvider, parseEther, formatEther } from "ethers";
-import {
-  PrivacyVaultSDK,
-  ZKProofClient,
-  CHAIN_CONFIG,
-  bytesToHex,
-} from "zkenclave-sdk";
+import { PrivacyVaultSDK, CHAIN_CONFIG, bytesToHex } from "zkenclave-sdk";
 import type { DepositNote as SDKDepositNote, VaultConfig } from "zkenclave-sdk";
 
 const VAULT_CONFIG: VaultConfig = {
@@ -42,9 +37,12 @@ function saveNotes(notes: UINote[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
 }
 
+import { WebZKProofClient } from "../lib/WebZKProofClient";
+
+// ...
+
 export default function Home() {
   const [sdk, setSdk] = useState<PrivacyVaultSDK | null>(null);
-  const [zkClient] = useState(() => new ZKProofClient());
   const [connected, setConnected] = useState(false);
   const [address, setAddress] = useState("");
   const [balance, setBalance] = useState("0");
@@ -86,7 +84,9 @@ export default function Home() {
           const bal = await provider.getBalance(accounts[0].address);
           setBalance(formatEther(bal));
           const signer = await provider.getSigner();
-          const newSdk = new PrivacyVaultSDK(VAULT_CONFIG, signer);
+          // Use WebZKProofClient for WASM proofs
+          const zkClient = new WebZKProofClient();
+          const newSdk = new PrivacyVaultSDK(VAULT_CONFIG, signer, zkClient);
           setSdk(newSdk);
         }
       } catch (error) {

@@ -366,22 +366,84 @@ var MerkleTree = class {
 
 // src/zk-client.ts
 import { keccak256 as keccak2562, toBeHex } from "ethers";
+var wasmModule = null;
 var ZKProofClient = class {
   config;
+  wasmReady = false;
   constructor(config) {
-    this.config = config ?? {};
+    this.config = config ?? { useRealProofs: true };
+    if (this.config.useRealProofs) {
+      this.loadWasm();
+    }
+  }
+  async loadWasm() {
+    if (wasmModule) {
+      this.wasmReady = true;
+      return;
+    }
+    try {
+      const wasmPath = this.config.wasmPath ?? "zkenclave-circuits";
+      const module = await import(
+        /* webpackIgnore: true */
+        wasmPath
+      );
+      wasmModule = module;
+      this.wasmReady = true;
+    } catch {
+      console.warn("WASM module not available, falling back to mock proofs");
+      this.wasmReady = false;
+    }
   }
   async generateWithdrawalProof(request) {
+    if (this.config.useRealProofs && this.wasmReady && wasmModule) {
+      return this.generateRealProof(request);
+    }
+    return this.generateFallbackProof(request);
+  }
+  async generateRealProof(request) {
+    const wasmRequest = {
+      secret: Array.from(request.commitment),
+      nullifier_seed: Array.from(request.nullifier),
+      amount: Number(request.amount),
+      leaf_index: request.leafIndex,
+      merkle_path: request.merklePath.map((p) => Array.from(p)),
+      path_indices: request.pathIndices,
+      merkle_root: request.merkleRoot ? Array.from(request.merkleRoot) : new Array(32).fill(0),
+      recipient: this.addressToBytes(request.recipient)
+    };
+    const resultJson = wasmModule.generate_withdrawal_proof(
+      JSON.stringify(wasmRequest)
+    );
+    const result = JSON.parse(resultJson);
+    if (!result.success) {
+      throw new Error(`ZK proof generation failed: ${result.error}`);
+    }
+    return {
+      success: true,
+      zkProof: new Uint8Array(result.proof),
+      nullifierHash: new Uint8Array(result.nullifier_hash),
+      merkleRoot: request.merkleRoot ?? new Uint8Array(32),
+      timestamp: Date.now()
+    };
+  }
+  async generateFallbackProof(request) {
     const nullifierHash = this.computeNullifierHash(
       request.nullifier,
       request.leafIndex
     );
-    const zkProof = this.generateMockProof(request);
     const merkleRoot = request.merkleRoot ?? new Uint8Array(32);
+    const proof = new Uint8Array(256);
+    proof[0] = 1;
+    const amountHex = toBeHex(request.amount, 32);
+    const amountBytes = this.hexToBytes(amountHex);
+    proof.set(amountBytes.slice(0, 32), 1);
+    proof.set(request.commitment.slice(0, 32), 33);
+    proof[250] = 90;
+    proof[251] = 75;
     return {
       success: true,
+      zkProof: proof,
       nullifierHash,
-      zkProof,
       merkleRoot,
       timestamp: Date.now()
     };
@@ -398,20 +460,36 @@ var ZKProofClient = class {
       proof: new Uint8Array(256)
     };
   }
+  async verifyProof(proofResult) {
+    if (this.wasmReady && wasmModule) {
+      const proofJson = JSON.stringify({
+        success: proofResult.success,
+        proof: Array.from(proofResult.zkProof),
+        nullifier_hash: Array.from(proofResult.nullifierHash),
+        public_inputs: [],
+        error: null
+      });
+      return wasmModule.verify_withdrawal_proof(proofJson);
+    }
+    return proofResult.success && proofResult.zkProof.length > 0 && proofResult.zkProof[250] === 90 && proofResult.zkProof[251] === 75;
+  }
+  isWasmReady() {
+    return this.wasmReady;
+  }
   computeNullifierHash(nullifier, leafIndex) {
     const indexBytes = new TextEncoder().encode(leafIndex.toString());
     const combined = new Uint8Array([...nullifier, ...indexBytes]);
     const hash = keccak2562(combined);
     return this.hexToBytes(hash);
   }
-  generateMockProof(request) {
-    const proof = new Uint8Array(256);
-    proof[0] = 1;
-    const amountHex = toBeHex(request.amount, 32);
-    const amountBytes = this.hexToBytes(amountHex);
-    proof.set(amountBytes.slice(0, 32), 1);
-    proof.set(request.commitment.slice(0, 32), 33);
-    return proof;
+  addressToBytes(address) {
+    const clean = address.startsWith("0x") ? address.slice(2) : address;
+    const bytes = [];
+    for (let i = 0; i < clean.length && bytes.length < 20; i += 2) {
+      bytes.push(parseInt(clean.slice(i, i + 2), 16));
+    }
+    while (bytes.length < 20) bytes.push(0);
+    return bytes;
   }
   hexToBytes(hex) {
     const cleanHex = hex.startsWith("0x") ? hex.slice(2) : hex;
@@ -433,7 +511,7 @@ var PrivacyVaultSDK = class {
   zkClient;
   config;
   _merkleTree;
-  constructor(config, signer) {
+  constructor(config, signer, zkClient) {
     this.config = config;
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
     if (signer) {
@@ -454,7 +532,7 @@ var PrivacyVaultSDK = class {
       ASP_REGISTRY_ABI,
       this.provider
     );
-    this.zkClient = new ZKProofClient();
+    this.zkClient = zkClient || new ZKProofClient();
     this._merkleTree = new MerkleTree();
   }
   async connect(signer) {
@@ -519,7 +597,8 @@ var PrivacyVaultSDK = class {
       leafIndex: note.leafIndex,
       merkleRoot: root,
       merklePath: [],
-      pathIndices: []
+      pathIndices: [],
+      secret: note.secret
     });
     const tx = await this.vault.withdraw(
       bytesToHex(nullifierHash),

@@ -16,6 +16,7 @@ export interface WithdrawalRequest {
   merkleRoot?: Uint8Array;
   merklePath: Uint8Array[];
   pathIndices: boolean[];
+  secret?: Uint8Array;
 }
 
 export interface WithdrawalResult {
